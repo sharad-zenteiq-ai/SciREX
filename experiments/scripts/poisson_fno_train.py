@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from scirex.operators.fno.models.fno2d import FNO2D
+from scirex.operators.layers import Lifting, Projection
 from scirex.training.train_state import create_train_state
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import mse

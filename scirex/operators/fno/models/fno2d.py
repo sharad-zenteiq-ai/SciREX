@@ -1,7 +1,7 @@
 from flax import linen as nn
 import jax.numpy as jnp
-from ..layers.lifting import Lifting
-from ..layers.projection import Projection
+from ...layers.lifting import Lifting
+from ...layers.projection import Projection
 from ..blocks.fno_block import SpectralBlock
 
 class FNO2D(nn.Module):
