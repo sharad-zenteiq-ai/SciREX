@@ -1,3 +1,4 @@
+from typing import Optional
 from flax import linen as nn
 import jax.numpy as jnp
 from ..layers.wavelet_conv import WaveletConv1D, WaveletConv2D
@@ -33,7 +34,7 @@ class WaveletBlock2D(nn.Module):
     width: int
     levels: int = 1
     wavelet: str = "haar"
-    activation: str = "gelu"
+    activation: Optional[str] = "gelu"
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -54,4 +55,6 @@ class WaveletBlock2D(nn.Module):
             out = nn.gelu(out)
         elif self.activation == "relu":
             out = nn.relu(out)
+        elif self.activation == "mish":
+            out = out * jnp.tanh(nn.softplus(out))
         return out

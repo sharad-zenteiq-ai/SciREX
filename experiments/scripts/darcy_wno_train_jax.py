@@ -1,10 +1,11 @@
 """
 JAX implementation of 2D Darcy flow training for Wavelet Neural Operator (WNO).
-Uses synthetic data generation via scirex.data.datasets.darcy.
-Adapted from original PyTorch implementation: https://github.com/csccm-iitd/WNO
+Faithfully follows original paper hyperparameters for rectangular domain.
+Paper: Tripura & Chakraborty (2022)
 """
 
 import os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 import argparse
 import pickle
 import json
@@ -26,7 +27,7 @@ from scirex.training.normalizers import GaussianNormalizer
 from scirex.data.datasets.darcy import generator as darcy_generator
 
 # ==============================================================================
-# CONFIGURATION / HYPERPARAMETERS
+# CONFIGURATION / HYPERPARAMETERS (Paper Settings)
 # ==============================================================================
 class Config:
     # Dataset
@@ -35,33 +36,32 @@ class Config:
     n_test = 100
     data_dir = 'scirex/data/datasets/darcy_fno'
     
-    # Model - Increased width for better representation
-    width = 128
+    # Model - Exact paper settings for rectangular Darcy flow
+    width = 64
     depth = 4
-    levels = 4 # 128 -> 8x8 coarse approximation
+    levels = 4
     wavelet = "db4"
+    projection_hidden_dim = 192  # From paper: fc1(width, 192) -> GeLU -> fc2(192, 1)
     
     # Training
-    batch_size = 32 # Leveraging GPU for larger batches
-    epochs = 50
+    batch_size = 20  # Paper setting
+    epochs = 100    # Paper setting
     lr = 1e-3
     weight_decay = 1e-4
+    gamma = 0.75      # Paper StepLR decay rate
+    step_size = 50    # Paper StepLR step size (epochs)
     seed = 42
     
     # Paths
     checkpoint_dir = 'experiments/checkpoints'
-    checkpoint_filename = "darcy_wno_jax_best.pkl"
+    checkpoint_filename = "darcy_wno_paper_best.pkl"
 
 # ==============================================================================
 
 # --- Loss Function ---
 
-def mse_loss(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
-    """Mean Squared Error loss."""
-    return jnp.mean((pred - target) ** 2)
-
 def relative_l2_loss(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
-    """Relative L2 loss (standard for neural operators)."""
+    """Relative L2 loss (LpLoss in paper)."""
     # Flatten spatial dimensions: (Batch, N)
     pred_flat = pred.reshape(pred.shape[0], -1)
     target_flat = target.reshape(target.shape[0], -1)
@@ -73,30 +73,24 @@ def relative_l2_loss(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
 # --- Training State ---
 
 class TrainState(train_state.TrainState):
-    pass
+    # Store normalizers in state for easy decoding in JIT
+    u_mean: jnp.ndarray
+    u_std: jnp.ndarray
 
-def create_train_state(rng, model, config, input_shape):
-    """Initializes the training state with a scheduler (including warmup)."""
+def create_train_state(rng, model, config, input_shape, u_normalizer):
+    """Initializes the training state with a StepLR scheduler."""
     variables = model.init(rng, jnp.ones(input_shape))
     params = variables['params']
     
-    # Learning rate scheduler: Warmup + Cosine decay
+    # Paper uses StepLR: Decays by gamma every step_size epochs
     num_train_batches = config.n_train // config.batch_size
-    total_steps = config.epochs * num_train_batches
-    warmup_steps = 5 * num_train_batches # 5 epochs warmup
+    steps_per_epoch = num_train_batches
     
-    cosine_schedule = optax.cosine_decay_schedule(
+    schedule = optax.exponential_decay(
         init_value=config.lr,
-        decay_steps=total_steps - warmup_steps,
-        alpha=0.1
-    )
-    
-    schedule = optax.join_schedules(
-        schedules=[
-            optax.linear_schedule(0.0, config.lr, warmup_steps),
-            cosine_schedule
-        ],
-        boundaries=[warmup_steps]
+        transition_steps=config.step_size * steps_per_epoch,
+        decay_rate=config.gamma,
+        staircase=True
     )
     
     # AdamW optimizer
@@ -106,43 +100,52 @@ def create_train_state(rng, model, config, input_shape):
         apply_fn=model.apply,
         params=params,
         tx=tx,
+        u_mean=jnp.array(u_normalizer.mean),
+        u_std=jnp.array(u_normalizer.std)
     )
 
 # --- JIT Compiled Steps ---
 
 @jax.jit
-def train_step(state: TrainState, a_batch: jnp.ndarray, u_batch: jnp.ndarray):
-    """Performs a single training step using MSE loss."""
+def train_step(state: TrainState, a_batch: jnp.ndarray, u_batch_norm: jnp.ndarray):
+    """Performs a single training step. Loss is calculated on DECODED scale."""
     def loss_fn(params):
-        logits = state.apply_fn({'params': params}, a_batch)
-        loss = mse_loss(logits, u_batch)
-        return loss, logits
+        # 1. Prediction (normalized scale)
+        pred_norm = state.apply_fn({'params': params}, a_batch)
+        
+        # 2. Decode to original scale (Paper does loss on physical values)
+        pred = pred_norm * state.u_std + state.u_mean
+        target = u_batch_norm * state.u_std + state.u_mean
+        
+        # 3. Calculate Relative L2 Loss
+        loss = relative_l2_loss(pred, target)
+        return loss, pred
 
     grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-    (mse_loss_val, logits), grads = grad_fn(state.params)
+    (loss_val, pred), grads = grad_fn(state.params)
     state = state.apply_gradients(grads=grads)
     
-    # Calculate Relative L2 for logging
-    rel_l2 = relative_l2_loss(logits, u_batch)
-    return state, mse_loss_val, rel_l2
+    return state, loss_val
 
 @jax.jit
-def eval_step(state: TrainState, a_batch: jnp.ndarray, u_batch: jnp.ndarray):
-    """Performs an evaluation step reporting Relative L2 loss."""
-    logits = state.apply_fn({'params': state.params}, a_batch)
-    loss = relative_l2_loss(logits, u_batch)
+def eval_step(state: TrainState, a_batch: jnp.ndarray, u_batch_norm: jnp.ndarray):
+    """Evaluation step reporting Relative L2 loss on decoded scale."""
+    pred_norm = state.apply_fn({'params': state.params}, a_batch)
+    
+    pred = pred_norm * state.u_std + state.u_mean
+    target = u_batch_norm * state.u_std + state.u_mean
+    
+    loss = relative_l2_loss(pred, target)
     return loss
 
 # --- Main Logic ---
 
 def main():
-    # 0. Check device
     print(f"JAX Devices: {jax.devices()}")
 
-    # 1. Setup PRNG
     main_key = jax.random.PRNGKey(Config.seed)
     
-    # 2. Load Data using Repo Dataloaders
+    # 2. Load Data
     print(f"Loading Darcy dataset (res={Config.res})...")
     a_train_raw, u_train_raw, a_test_raw, u_test_raw = darcy_zenodo.load_darcy_numpy(
         root_dir=Config.data_dir,
@@ -151,7 +154,7 @@ def main():
         n_test=Config.n_test
     )
     
-    # Coordinates
+    # Grid coordinates [a, x, y]
     x_grid = np.linspace(0, 1, Config.res)
     y_grid = np.linspace(0, 1, Config.res)
     X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
@@ -164,41 +167,39 @@ def main():
     a_train_ext = append_grid(a_train_raw)
     a_test_ext = append_grid(a_test_raw)
     
-    # 3. Normalization (Global statistics)
+    # 3. Normalization (Paper: Normalizes input and output)
     print("Computing normalization statistics...")
     a_normalizer = GaussianNormalizer(a_train_ext)
-    u_normalizer = GaussianNormalizer(u_train_raw)
+    u_normalizer = GaussianNormalizer(u_train_raw) # Needed for decoding in loss
     
     a_train_norm = a_normalizer.encode(jnp.asarray(a_train_ext))
     u_train_norm = u_normalizer.encode(jnp.asarray(u_train_raw))
     a_test_norm = a_normalizer.encode(jnp.asarray(a_test_ext))
     u_test_norm = u_normalizer.encode(jnp.asarray(u_test_raw))
     
-    # 4. Initialize Data Generators (from repo)
-    num_train_batches = Config.n_train // Config.batch_size
-    num_test_batches = Config.n_test // Config.batch_size
-    
-    # 5. Initialize Model
+    # 4. Initialize Model
     model = WNO2D(
         width=Config.width,
         depth=Config.depth,
         levels=Config.levels,
         wavelet=Config.wavelet,
-        out_channels=1
+        out_channels=1,
+        projection_hidden_dim=Config.projection_hidden_dim
     )
     
     input_shape = (Config.batch_size, Config.res, Config.res, 3)
     train_key, init_key = jax.random.split(main_key)
-    state = create_train_state(init_key, model, Config, input_shape)
+    state = create_train_state(init_key, model, Config, input_shape, u_normalizer)
     
     # 6. Training Loop
-    print(f"Starting training for {Config.epochs} epochs...")
+    print(f"Starting training for {Config.epochs} epochs (Paper settings)...")
     best_loss = float('inf')
     history_train = []
     history_test = []
     
+    num_train_batches = Config.n_train // Config.batch_size
+    
     for epoch in range(1, Config.epochs + 1):
-        # We manually batch here for simplicity with the loaded arrays
         indices = np.random.permutation(Config.n_train)
         train_losses = []
         
@@ -209,15 +210,12 @@ def main():
             a_batch = a_train_norm[idx]
             u_batch = u_train_norm[idx]
             
-            state, mse_v, rel_v = train_step(state, a_batch, u_batch)
-            train_losses.append(rel_v)
+            state, rel_l2_train = train_step(state, a_batch, u_batch)
+            train_losses.append(rel_l2_train)
             
-            if (i // Config.batch_size) % 10 == 0:
-                print(f"  Batch {i // Config.batch_size:3d}/{num_train_batches}: MSE {mse_v:.6f} | RelL2 {rel_v:.6f}")
-        
         avg_train_loss = np.mean(train_losses)
         
-        # Validation
+        # Validation every epoch
         test_losses = []
         for i in range(0, Config.n_test, Config.batch_size):
             idx = np.arange(i, min(i+Config.batch_size, Config.n_test))
@@ -233,9 +231,10 @@ def main():
         history_train.append(float(avg_train_loss))
         history_test.append(float(avg_test_loss))
         
-        print(f"Epoch {epoch:3d} | Train RelL2: {avg_train_loss:.6f} | Test RelL2: {avg_test_loss:.6f}")
+        if epoch % 10 == 0 or epoch == 1:
+            print(f"Epoch {epoch:4d} | Train RelL2: {avg_train_loss:.6f} | Test RelL2: {avg_test_loss:.6f}")
         
-        # Save Checkpoint
+        # Save Best Checkpoint
         if avg_test_loss < best_loss:
             best_loss = avg_test_loss
             checkpoint = {
@@ -248,7 +247,7 @@ def main():
                     'depth': Config.depth,
                     'levels': Config.levels,
                     'wavelet': Config.wavelet,
-                    'seed': Config.seed
+                    'projection_hidden': Config.projection_hidden_dim
                 }
             }
             save_path = Path(Config.checkpoint_dir)
@@ -256,37 +255,31 @@ def main():
             with open(save_path / Config.checkpoint_filename, "wb") as f:
                 pickle.dump(checkpoint, f)
 
-    # 7. Final Evaluation and Visualization
     print(f"✅ Training Complete. Best Test RelL2: {best_loss:.4f}")
 
-    # Plot Loss Curve
+    # Plot and Save
     results_dir = Path("experiments/results")
-    figures_dir = results_dir / "figures"
-    figures_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
     
     plt.figure(figsize=(10, 6))
     plt.plot(history_train, label='Train RelL2')
     plt.plot(history_test, label='Test RelL2')
+    plt.yscale('log')
     plt.xlabel('Epoch')
     plt.ylabel('Relative L2 Loss')
-    plt.title('WNO Training Progress (Darcy 2D)')
+    plt.title('WNO Paper Settings - Training Progress')
     plt.legend()
     plt.grid(True)
-    plt.savefig(figures_dir / "loss_curve.png")
-    print(f"📈 Loss curve saved to {figures_dir / 'loss_curve.png'}")
+    plt.savefig(results_dir / "paper_loss_curve.png")
 
-    # Save Metrics and Config to JSON
     metrics = {
         "best_test_rel_l2": float(best_loss),
         "final_train_rel_l2": history_train[-1],
         "final_test_rel_l2": history_test[-1],
-        "config": {
-            k: v for k, v in Config.__dict__.items() if not k.startswith("__")
-        }
+        "config": {k: v for k, v in Config.__dict__.items() if not k.startswith("__")}
     }
-    with open(results_dir / "metrics.json", "w") as f:
+    with open(results_dir / "paper_metrics.json", "w") as f:
         json.dump(metrics, f, indent=4)
-    print(f"📄 Metrics and config saved to {results_dir / 'metrics.json'}")
 
 if __name__ == "__main__":
     main()
