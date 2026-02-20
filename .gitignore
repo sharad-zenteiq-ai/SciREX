@@ -33,6 +33,8 @@ examples/**/__pycache__/
 
 output/*
 
+experiments/checkpoints
+experiments/results
 
 # pytest 
 *.vtk
