@@ -22,7 +22,7 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-"""Train a Flax FNO to learn the Poisson solution operator in 3D (f -> u)."""
+"""Train a Flax FNO to learn the Poisson solution operator (f -> u)."""
 import os
 import sys
 
@@ -40,18 +40,22 @@ import time
 import matplotlib.pyplot as plt
 import json
 
-from scirex.operators.models.fno3d import FNO3D
+from scirex.operators.models.fno2d import FNO2D
 from scirex.training.train_state import create_train_state, TrainState
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import mse, lp_loss
-from scirex.data.datasets.poisson_3d import generator as poisson3d_generator
-from configs.poisson_fno_config import FNO3DConfig
+from scirex.data.datasets.poisson import generator as poisson_generator
+from configs.poisson_fno_config import FNO2DConfig
 
 
-def make_schedule(config: FNO3DConfig):
+def make_schedule(config: FNO2DConfig):
     """Create learning rate schedule (StepLR equivalent)."""
+    # boundaries are in steps: epoch * steps_per_epoch
+    # values are scaled by gamma cumulatively
     scales = {}
     decay_steps = config.scheduler_step_size * config.steps_per_epoch
+    
+    # We will compute schedule for total epochs
     num_decays = config.epochs // config.scheduler_step_size
     
     current_scale = 1.0
@@ -60,6 +64,7 @@ def make_schedule(config: FNO3DConfig):
         current_scale *= config.scheduler_gamma
         scales[boundary] = current_scale
         
+    # optax piecewise constant schedule uses init_value * scale for the interval
     schedule = optax.piecewise_constant_schedule(
         init_value=config.learning_rate,
         boundaries_and_scales=scales
@@ -68,15 +73,15 @@ def make_schedule(config: FNO3DConfig):
 
 def main():
     # 1. Load Configuration
-    config = FNO3DConfig()
+    config = FNO2DConfig()
     
     # Prng Key
     rng = jax.random.PRNGKey(config.seed)
     rng, init_rng = jax.random.split(rng)
     
     # 2. Initialize Model
-    print(f"Initializing FNO3D (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
-    model = FNO3D(
+    print(f"Initializing FNO2D (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
+    model = FNO2D(
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 
@@ -85,11 +90,13 @@ def main():
     
     # 3. Initialize Optimizer & Scheduler
     schedule = make_schedule(config)
+    # Total steps verification
     total_steps = config.epochs * config.steps_per_epoch
     
     # Create Train State
-    nx, ny, nz = config.resolution
-    input_shape = (config.batch_size, nx, ny, nz, config.in_channels)
+    # Shape: (batch, nx, ny, in_channels)
+    nx, ny = config.resolution
+    input_shape = (config.batch_size, nx, ny, config.in_channels)
     state = create_train_state(
         rng=init_rng, 
         model=model, 
@@ -99,39 +106,39 @@ def main():
     )
     
     # 4. Data Generators
-    nx, ny, nz = config.resolution
-    train_gen = poisson3d_generator(
-        num_batches=total_steps + 100,
+    # Train generator yields infinite batches
+    nx, ny = config.resolution
+    train_gen = poisson_generator(
+        num_batches=total_steps + 100, # ensure enough
         batch_size=config.batch_size, 
         nx=nx, 
         ny=ny, 
-        nz=nz,
-        include_mesh=config.include_mesh,
+        channels=config.in_channels, 
         rng_seed=config.seed
     )
     
-    # Test set (fixed seed)
-    nx, ny, nz = config.resolution
-    f_test, u_test = next(poisson3d_generator(
+    # Test set (fixed seed for consistency)
+    f_test, u_test = next(poisson_generator(
         num_batches=1, 
-        batch_size=config.batch_size,
+        batch_size=config.batch_size, # evaluate on same batch size
         nx=nx, 
         ny=ny, 
-        nz=nz,
-        include_mesh=config.include_mesh,
-        rng_seed=999 
+        channels=config.in_channels, 
+        rng_seed=999 # Different seed for test
     ))
     test_batch = {"x": jnp.asarray(f_test), "y": jnp.asarray(u_test)}
     
-    # Paths
+    # Create checkpoint directory and results directory
     ckpt_dir = os.path.join(project_root, "experiments/checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_path = os.path.join(ckpt_dir, "poisson3d_fno_params.pkl")
+    ckpt_path = os.path.join(ckpt_dir, "poisson_fno_params.pkl")
 
-    results_dir = os.path.join(project_root, "experiments/results/poisson3d")
+    results_dir = os.path.join(project_root, "experiments/results/poisson")
     os.makedirs(results_dir, exist_ok=True)
 
     best_rel_l2 = float("inf")
+    
+    # Track metrics for plotting
     history = {
         "train_mse": [],
         "train_rel_l2": [],
@@ -155,28 +162,36 @@ def main():
         epoch_time = time.time() - epoch_start_time
         avg_train_mse = epoch_loss / config.steps_per_epoch
         
-        # Performance monitoring
+        # We need train_rel_l2, test_mse, test_rel_l2
+        # For efficiency, compute train_rel_l2 on the LAST training batch of the epoch
         train_metrics_l2 = eval_step(state, batch, lp_loss)
         avg_train_l2 = float(train_metrics_l2["loss"])
 
+        # Evaluate on test set
         test_metrics_mse = eval_step(state, test_batch, mse)
         test_metrics_l2 = eval_step(state, test_batch, lp_loss)
+        
         v_test_mse = float(test_metrics_mse["loss"])
         v_test_l2 = float(test_metrics_l2["loss"])
 
+        # Update history
         history["train_mse"].append(avg_train_mse)
         history["train_rel_l2"].append(avg_train_l2)
         history["test_mse"].append(v_test_mse)
         history["test_rel_l2"].append(v_test_l2)
         
-        if v_test_l2 < best_rel_l2:
-            best_rel_l2 = v_test_l2
+        test_rel_l2 = v_test_l2 # for checkpointing
+        
+        # Save best checkpoint
+        if test_rel_l2 < best_rel_l2:
+            best_rel_l2 = test_rel_l2
             with open(ckpt_path, "wb") as f:
                 f.write(flax.serialization.to_bytes(state.params))
         
+        # Scheduler info
         current_lr = schedule(state.step)
         
-        if epoch % 5 == 0 or epoch == config.epochs - 1:
+        if epoch % 10 == 0 or epoch == config.epochs - 1:
             print(f"Epoch {epoch:4d} | "
                   f"Train MSE: {avg_train_mse:.6e} | "
                   f"Test MSE: {v_test_mse:.6e} | "
@@ -185,7 +200,8 @@ def main():
                   f"LR: {float(current_lr):.2e} | "
                   f"Time: {epoch_time:.2f}s")
             
-            with open(os.path.join(results_dir, "fno3d_metrics.json"), "w") as f:
+            # Save history periodically to avoid loss on interruption
+            with open(os.path.join(results_dir, "fno2d_metrics.json"), "w") as f:
                 json.dump(history, f, indent=4)
 
     print("\nTraining Complete.")
@@ -196,26 +212,30 @@ def main():
     epochs_range = range(len(history["train_mse"]))
     plt.figure(figsize=(12, 5))
     
+    # Plot MSE
     plt.subplot(1, 2, 1)
     plt.semilogy(epochs_range, history["train_mse"], label='Train MSE')
     plt.semilogy(epochs_range, history["test_mse"], label='Test MSE', linestyle='--')
     plt.xlabel('Epoch')
     plt.ylabel('MSE')
-    plt.title('3D Poisson Loss (MSE)')
+    plt.title('Loss (MSE)')
     plt.grid(True, which="both", ls="-", alpha=0.5)
     plt.legend()
     
+    # Plot Rel L2
     plt.subplot(1, 2, 2)
     plt.semilogy(epochs_range, history["train_rel_l2"], label='Train Rel L2')
     plt.semilogy(epochs_range, history["test_rel_l2"], label='Test Rel L2', color='orange', linestyle='--')
     plt.xlabel('Epoch')
     plt.ylabel('Relative L2 Error')
-    plt.title('3D Poisson Accuracy (Rel L2)')
+    plt.title('Accuracy (Rel L2)')
     plt.grid(True, which="both", ls="-", alpha=0.5)
     plt.legend()
     
     plt.tight_layout()
-    plt.savefig(os.path.join(results_dir, "poisson3d_fno_losses.png"), dpi=150)
+    loss_plot_path = os.path.join(results_dir, "poisson_fno_losses.png")
+    plt.savefig(loss_plot_path, dpi=150)
+    print(f"Loss curves saved to: {loss_plot_path}")
 
 if __name__ == "__main__":
     main()

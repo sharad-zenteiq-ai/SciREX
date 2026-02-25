@@ -44,7 +44,7 @@ def test_copyright():
 
     # Get all Python files
     python_files = []
-    scan_dirs = ["scirex", "tests", "examples"]
+    scan_dirs = ["scirex", "tests", "examples", "experiments"]
 
     for dir_name in scan_dirs:
         dir_path = root_dir / dir_name

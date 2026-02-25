@@ -22,16 +22,41 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
+from typing import Tuple, Callable
 from flax import linen as nn
 import jax.numpy as jnp
+from ..layers.lifting import Lifting
+from ..layers.projection import Projection
+from ..blocks.fno_block import SpectralBlock
 
-class Lifting(nn.Module):
+class FNO2D(nn.Module):
     """
-    Lifting layer: projects the input to a higher-dimensional space (hidden_channels).
-    Usually a pointwise 1x1 convolution (Dense layer).
+    2D Fourier Neural Operator model.
+    Structure: Lifting -> n_layers x SpectralBlock -> Projection
     """
     hidden_channels: int
+    n_layers: int
+    n_modes: Tuple[int, int]
+    out_channels: int
+    activation: Callable = nn.gelu
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return nn.Dense(self.hidden_channels)(x)
+        """
+        x: (batch, nx, ny, in_channels)
+        returns: (batch, nx, ny, out_channels)
+        """
+        # Lifting: encoder Dense -> project to hidden_channels
+        x = Lifting(hidden_channels=self.hidden_channels)(x)
+        
+        # Iterative FNO blocks
+        for _ in range(self.n_layers):
+            x = SpectralBlock(
+                hidden_channels=self.hidden_channels, 
+                n_modes=self.n_modes,
+                activation=self.activation
+            )(x)
+            
+        # Projection: decoder Dense -> project to desired output channels
+        x = Projection(out_channels=self.out_channels)(x)
+        return x

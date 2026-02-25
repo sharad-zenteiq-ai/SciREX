@@ -22,28 +22,34 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-from typing import Any
+"""
+Unit test for forward pass shape of the FNO2D model.
+"""
 import jax
-import optax
-from flax.training import train_state
+import jax.numpy as jnp
+from scirex.operators.models.fno2d import FNO2D
+from scirex.training.train_state import create_train_state
 
-# Alias for type hinting
-TrainState = train_state.TrainState
+def test_forward_shape():
+    rng = jax.random.PRNGKey(0)
+    batch, nx, ny, in_channels = 2, 16, 16, 1
+    hidden_channels = 16
+    n_layers = 2
+    n_modes = (6, 6)
+    out_channels = 1
 
-def create_train_state(rng: Any, model: Any, input_shape: tuple, learning_rate: float, weight_decay: float = 1e-4) -> TrainState:
-    """
-    Initialize model params and optimizer state.
+    model = FNO2D(
+        hidden_channels=hidden_channels, 
+        n_layers=n_layers, 
+        n_modes=n_modes, 
+        out_channels=out_channels
+    )
+    state = create_train_state(rng, model, (batch, nx, ny, in_channels), learning_rate=1e-3)
+    x = jnp.ones((batch, nx, ny, in_channels), dtype=jnp.float32)
+    
+    preds = state.apply_fn({"params": state.params}, x)
+    assert preds.shape == (batch, nx, ny, out_channels)
+    print("test_forward_shape OK:", preds.shape)
 
-    - rng: PRNG key
-    - model: Flax Module instance (e.g., FNO2D(...))
-    - input_shape: shape tuple for dummy input (batch, nx, ny, channels)
-    - learning_rate: optimizer lr (can be float or optax schedule)
-    - weight_decay: weight decay for AdamW
-    """
-    dummy = jax.random.normal(rng, input_shape)
-    variables = model.init(rng, dummy)
-    params = variables["params"]
-    # Using AdamW which is standard for FNO training
-    tx = optax.adamw(learning_rate, weight_decay=weight_decay)
-    state = TrainState.create(apply_fn=model.apply, params=params, tx=tx)
-    return state
+if __name__ == "__main__":
+    test_forward_shape()

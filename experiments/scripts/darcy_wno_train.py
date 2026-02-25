@@ -1,3 +1,27 @@
+# Copyright (c) 2024 Zenteiq Aitech Innovations Private Limited and
+# AiREX Lab, Indian Institute of Science, Bangalore.
+# All rights reserved.
+#
+# This file is part of SciREX
+# (Scientific Research and Engineering eXcellence Platform),
+# developed jointly by Zenteiq Aitech Innovations and AiREX Lab
+# under the guidance of Prof. Sashikumaar Ganesan.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# For any clarifications or special considerations,
+# please contact: contact@scirex.org
+
 import os
 # Prevent JAX from pre-allocating all GPU memory
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -5,7 +29,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from scirex.operators.wno.models.wno2d import WNO2D
+from scirex.operators.models.wno2d import WNO2D
 from scirex.operators.layers import Lifting, Projection
 from scirex.training.train_state import create_train_state
 from scirex.training.step_fns import train_step, eval_step
@@ -19,12 +43,12 @@ from pathlib import Path
 def main():
     # Model Config
     batch_size = 8 # Reduced to avoid OOM
-    nx, ny, in_ch = 128, 128, 3 # (a, x, y)
-    width = 64
-    depth = 4
+    nx, ny, in_channels = 128, 128, 3 # (a, x, y)
+    hidden_channels = 64
+    n_layers = 4
     levels = 6
     wavelet = "db4"
-    out_ch = 1
+    out_channels = 1
     lr = 1e-3
     rng = jax.random.PRNGKey(42)
 
@@ -36,11 +60,11 @@ def main():
     coords = jnp.array(coords)
 
     model = WNO2D(
-        width=width, 
-        depth=depth, 
+        hidden_channels=hidden_channels, 
+        n_layers=n_layers, 
         levels=levels, 
         wavelet=wavelet, 
-        out_channels=out_ch
+        out_channels=out_channels
     )
     # Scheduler: Warmup + Cosine Decay
     num_batches = 5000
@@ -55,7 +79,7 @@ def main():
     )
     
     tx = optax.adam(learning_rate=scheduler)
-    state = create_train_state(rng, model, (batch_size, nx, ny, in_ch), tx=tx)
+    state = create_train_state(rng, model, (batch_size, nx, ny, in_channels), tx=tx)
 
     # Dataset config - Using official Zenodo benchmark data (numpy format)
     data_dir = 'scirex/data/datasets/darcy'
@@ -174,8 +198,8 @@ def main():
         "a_normalizer": a_normalizer,
         "u_normalizer": u_normalizer,
         "config": {
-            "width": width,
-            "depth": depth,
+            "hidden_channels": hidden_channels,
+            "n_layers": n_layers,
             "levels": levels,
             "wavelet": wavelet,
             "nx": nx,

@@ -22,16 +22,43 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
+from typing import Callable
 from flax import linen as nn
 import jax.numpy as jnp
+from ..layers.lifting import Lifting
+from ..layers.projection import Projection
+from ..blocks.wavelet_block import WaveletBlock1D
 
-class Lifting(nn.Module):
+class WNO1D(nn.Module):
     """
-    Lifting layer: projects the input to a higher-dimensional space (hidden_channels).
-    Usually a pointwise 1x1 convolution (Dense layer).
+    1D Wavelet Neural Operator model.
+    Structure: Lifting -> n_layers x WaveletBlock -> Projection
     """
     hidden_channels: int
+    n_layers: int
+    levels: int = 1
+    wavelet: str = "haar"
+    out_channels: int = 1
+    activation: Callable = nn.gelu
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return nn.Dense(self.hidden_channels)(x)
+        """
+        x: (batch, length, in_channels)
+        returns: (batch, length, out_channels)
+        """
+        # 1. Lifting
+        x = Lifting(hidden_channels=self.hidden_channels)(x)
+        
+        # 2. Wavelet Blocks
+        for _ in range(self.n_layers):
+            x = WaveletBlock1D(
+                hidden_channels=self.hidden_channels, 
+                levels=self.levels,
+                wavelet=self.wavelet,
+                activation=self.activation
+            )(x)
+            
+        # 3. Projection
+        x = Projection(out_channels=self.out_channels)(x)
+        return x
