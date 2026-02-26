@@ -44,6 +44,10 @@ def create_train_state(rng: Any, model: Any, input_shape: tuple, learning_rate: 
     variables = model.init(rng, dummy)
     params = variables["params"]
     # Using AdamW which is standard for FNO training
-    tx = optax.adamw(learning_rate, weight_decay=weight_decay)
+    # Chained with gradient clipping to prevent explosion!
+    tx = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adamw(learning_rate, weight_decay=weight_decay)
+    )
     state = TrainState.create(apply_fn=model.apply, params=params, tx=tx)
     return state

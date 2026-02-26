@@ -56,7 +56,12 @@ def main():
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 
-        out_channels=config.out_channels
+        out_channels=config.out_channels,
+        lifting_channel_ratio=config.lifting_channel_ratio,
+        projection_channel_ratio=config.projection_channel_ratio,
+        use_grid=config.use_grid,
+        fno_skip=config.fno_skip,
+        use_channel_mlp=config.use_channel_mlp
     )
     
     # 3. Load Checkpoint
