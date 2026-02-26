@@ -1,3 +1,27 @@
+# Copyright (c) 2024 Zenteiq Aitech Innovations Private Limited and
+# AiREX Lab, Indian Institute of Science, Bangalore.
+# All rights reserved.
+#
+# This file is part of SciREX
+# (Scientific Research and Engineering eXcellence Platform),
+# developed jointly by Zenteiq Aitech Innovations and AiREX Lab
+# under the guidance of Prof. Sashikumaar Ganesan.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# For any clarifications or special considerations,
+# please contact: contact@scirex.org
+
 """
 Poisson 2D dataset generator (periodic domain) using FFT-based Poisson solver.
 
@@ -64,24 +88,49 @@ def random_poisson_batch(
     X, Y = np.meshgrid(xs, ys, indexing="ij")
 
     f_batch = np.zeros((batch_size, nx, ny, channels), dtype=np.float32)
+    
+    # Precompute wavenumbers for GRF
+    # Usually: alpha=2.0, tau=3.0 for 2D FNO Poisson
+    k_max = nx // 2
+    kx = np.fft.fftfreq(nx, d=1.0) * nx
+    ky = np.fft.fftfreq(ny, d=1.0) * ny
+    Kx, Ky = np.meshgrid(kx, ky, indexing="ij")
+    k_sq = Kx**2 + Ky**2
+    
+    alpha = 2.0
+    tau = 3.0
+    # Inverse square root of eigenvalues of covariance
+    inv_eigen = 1.0 / ((k_sq + tau**2) ** alpha)
+    inv_eigen[0, 0] = 0.0 # Zero mean
+    
     for b in range(batch_size):
-        field = np.zeros((nx, ny), dtype=np.float32)
-        # sum of a few low-frequency sine/cosine modes
-        nmodes = rng.integers(1, max_modes + 1)
-        for _ in range(nmodes):
-            ax = rng.integers(1, max(2, nx // 4))
-            ay = rng.integers(1, max(2, ny // 4))
-            amp = float(rng.normal(0, 1.0))
-            phase = rng.uniform(0, 2 * np.pi)
-            field += amp * np.sin(ax * X + ay * Y + phase)
+        # Sample random noise in Fourier space
+        noise = rng.normal(size=(nx, ny)) + 1j * rng.normal(size=(nx, ny))
+        F_hat = noise * inv_eigen * nx * ny
+        field = np.fft.ifft2(F_hat).real
+        
         # normalize
         std = np.std(field)
         if std > 0:
             field = field / std * 1.0
         f_batch[b, :, :, 0] = field
-
-    u_batch = solve_poisson_periodic_batch(f_batch) * 1000
-    return f_batch.astype(np.float32), u_batch.astype(np.float32)
+    
+    # Create normalized coordinates: (nx, ny, 2)
+    xs_norm = np.linspace(0, 1, nx)
+    ys_norm = np.linspace(0, 1, ny)
+    X_norm, Y_norm = np.meshgrid(xs_norm, ys_norm, indexing="ij")
+    
+    # Broadcast to (batch, nx, ny, 2)
+    grid_x = np.tile(X_norm[None, ..., None], (batch_size, 1, 1, 1))
+    grid_y = np.tile(Y_norm[None, ..., None], (batch_size, 1, 1, 1))
+    
+    # Concatenate f with x, y: final shape (batch, nx, ny, 3)
+    f_batch = np.concatenate([f_batch, grid_x, grid_y], axis=-1)
+    
+    # Target solution u 
+    u_batch = solve_poisson_periodic_batch(f_batch[..., :1])
+        
+    return np.asarray(f_batch).astype(np.float32), np.asarray(u_batch).astype(np.float32)
 
 
 def generator(
@@ -89,7 +138,7 @@ def generator(
     batch_size: int,
     nx: int,
     ny: int,
-    channels: int = 1,
+    channels: int = 1, # Base channels (will be appended with coordinates)
     rng_seed: int = 0,
 ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
     """

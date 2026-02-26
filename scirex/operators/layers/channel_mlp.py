@@ -22,28 +22,34 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-"""
-Standard data-driven loss functions for operator learning.
-"""
+from typing import Optional, Callable
+from flax import linen as nn
 import jax.numpy as jnp
 
-def mse(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
-    """Mean Squared Error."""
-    return jnp.mean((pred - target) ** 2)
+class ChannelMLP(nn.Module):
+    """
+    Multi-layer perceptron applied channel-wise across spatial dimensions.
+    Equivalent to neuraloperator's ChannelMLP, but implemented in Flax.
+    
+    This is used for both Lifting and Projection in the FNO architecture.
+    """
+    out_channels: int
+    hidden_channels: Optional[int] = None
+    n_layers: int = 1
+    activation: Callable = nn.gelu
 
-def lp_loss(pred: jnp.ndarray, target: jnp.ndarray, p: int = 2) -> jnp.ndarray:
-    """
-    Relative Lp loss: ||pred - target||_p / ||target||_p
-    Standard objective for operator learning.
-    """
-    # Flatten spatial and channel dimensions to (batch, -1)
-    batch = pred.shape[0]
-    diff = (pred - target).reshape(batch, -1)
-    targ = target.reshape(batch, -1)
-    
-    # Compute norms per sample in batch
-    diff_norm = jnp.linalg.norm(diff, ord=p, axis=1)
-    targ_norm = jnp.linalg.norm(targ, ord=p, axis=1)
-    
-    # Return mean relative error over batch
-    return jnp.mean(diff_norm / (targ_norm + 1e-8))
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        hidden = self.hidden_channels if self.hidden_channels is not None else self.out_channels
+        
+        for i in range(self.n_layers):
+            # Last layer projects to out_channels, others to hidden
+            is_last = (i == self.n_layers - 1)
+            layer_out = self.out_channels if is_last else hidden
+            
+            x = nn.Dense(layer_out)(x)
+            
+            if not is_last:
+                x = self.activation(x)
+                
+        return x

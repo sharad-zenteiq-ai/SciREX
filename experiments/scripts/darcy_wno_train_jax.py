@@ -1,3 +1,27 @@
+# Copyright (c) 2024 Zenteiq Aitech Innovations Private Limited and
+# AiREX Lab, Indian Institute of Science, Bangalore.
+# All rights reserved.
+#
+# This file is part of SciREX
+# (Scientific Research and Engineering eXcellence Platform),
+# developed jointly by Zenteiq Aitech Innovations and AiREX Lab
+# under the guidance of Prof. Sashikumaar Ganesan.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# For any clarifications or special considerations,
+# please contact: contact@scirex.org
+
 """
 JAX implementation of 2D Darcy flow training for Wavelet Neural Operator (WNO).
 Faithfully follows original paper hyperparameters for rectangular domain.
@@ -20,7 +44,7 @@ import matplotlib.pyplot as plt
 from flax.training import train_state
 
 # Import existing WNO model from the repository
-from scirex.operators.wno.models.wno2d import WNO2D
+from scirex.operators.models.wno2d import WNO2D
 from scirex.operators.layers import Lifting, Projection
 from scirex.data.datasets import darcy_zenodo
 from scirex.training.normalizers import GaussianNormalizer
@@ -37,8 +61,8 @@ class Config:
     data_dir = 'scirex/data/datasets/darcy_fno'
     
     # Model - Exact paper settings for rectangular Darcy flow
-    width = 64
-    depth = 4
+    hidden_channels = 64
+    n_layers = 4
     levels = 4
     wavelet = "db4"
     projection_hidden_dim = 192  # From paper: fc1(width, 192) -> GeLU -> fc2(192, 1)
@@ -179,8 +203,8 @@ def main():
     
     # 4. Initialize Model
     model = WNO2D(
-        width=Config.width,
-        depth=Config.depth,
+        hidden_channels=Config.hidden_channels,
+        n_layers=Config.n_layers,
         levels=Config.levels,
         wavelet=Config.wavelet,
         out_channels=1,
@@ -243,11 +267,11 @@ def main():
                 'u_norm': u_normalizer,
                 'config': {
                     'res': Config.res,
-                    'width': Config.width,
-                    'depth': Config.depth,
+                    'hidden_channels': Config.hidden_channels,
+                    'n_layers': Config.n_layers,
                     'levels': Config.levels,
                     'wavelet': Config.wavelet,
-                    'projection_hidden': Config.projection_hidden_dim
+                    'projection_hidden_dim': Config.projection_hidden_dim
                 }
             }
             save_path = Path(Config.checkpoint_dir)
