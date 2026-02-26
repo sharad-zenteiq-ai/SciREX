@@ -36,6 +36,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import flax
+from flax import linen as nn
 import time
 import matplotlib.pyplot as plt
 import json
@@ -49,21 +50,38 @@ from configs.poisson_fno_config import FNO3DConfig
 
 
 def make_schedule(config: FNO3DConfig):
-    """Create learning rate schedule (StepLR equivalent)."""
-    scales = {}
-    decay_steps = config.scheduler_step_size * config.steps_per_epoch
-    num_decays = config.epochs // config.scheduler_step_size
+    """Create learning rate schedule based on config.scheduler_type.
     
-    current_scale = 1.0
-    for i in range(1, num_decays + 1):
-        boundary = i * decay_steps
-        current_scale *= config.scheduler_gamma
-        scales[boundary] = current_scale
+    Supports:
+        - "step":   StepLR equivalent (piecewise constant decay)
+        - "cosine": Cosine annealing from lr → 0
+    """
+    total_steps = config.epochs * config.steps_per_epoch
+    
+    if config.scheduler_type == "cosine":
+        schedule = optax.cosine_decay_schedule(
+            init_value=config.learning_rate,
+            decay_steps=total_steps,
+            alpha=0.0
+        )
+    elif config.scheduler_type == "step":
+        scales = {}
+        decay_steps = config.scheduler_step_size * config.steps_per_epoch
+        num_decays = config.epochs // config.scheduler_step_size
         
-    schedule = optax.piecewise_constant_schedule(
-        init_value=config.learning_rate,
-        boundaries_and_scales=scales
-    )
+        current_scale = 1.0
+        for i in range(1, num_decays + 1):
+            boundary = i * decay_steps
+            current_scale *= config.scheduler_gamma
+            scales[boundary] = current_scale
+            
+        schedule = optax.piecewise_constant_schedule(
+            init_value=config.learning_rate,
+            boundaries_and_scales=scales
+        )
+    else:
+        raise ValueError(f"Unknown scheduler_type: {config.scheduler_type}")
+    
     return schedule
 
 def main():
@@ -80,7 +98,16 @@ def main():
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 
-        out_channels=config.out_channels
+        out_channels=config.out_channels,
+        lifting_channel_ratio=config.lifting_channel_ratio,
+        projection_channel_ratio=config.projection_channel_ratio,
+        use_grid=config.use_grid,
+        use_norm=config.use_norm,
+        fno_skip=config.fno_skip,
+        channel_mlp_skip=config.channel_mlp_skip,
+        use_channel_mlp=config.use_channel_mlp,
+        padding=config.domain_padding,
+        activation=nn.gelu
     )
     
     # 3. Initialize Optimizer & Scheduler
@@ -106,20 +133,22 @@ def main():
         nx=nx, 
         ny=ny, 
         nz=nz,
-        include_mesh=config.include_mesh,
+        channels=1,
+        include_mesh=True,
         rng_seed=config.seed
     )
     
     # Test set (fixed seed)
     nx, ny, nz = config.resolution
     f_test, u_test = next(poisson3d_generator(
-        num_batches=1, 
-        batch_size=config.batch_size,
+        num_batches=1,
+        batch_size=config.batch_size, 
         nx=nx, 
         ny=ny, 
         nz=nz,
-        include_mesh=config.include_mesh,
-        rng_seed=999 
+        channels=1,
+        include_mesh=True,
+        rng_seed=999
     ))
     test_batch = {"x": jnp.asarray(f_test), "y": jnp.asarray(u_test)}
     

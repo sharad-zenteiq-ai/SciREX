@@ -22,26 +22,35 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union, Tuple, Callable, Literal
 from flax import linen as nn
 import jax.numpy as jnp
-from ..layers.lifting import Lifting
-from ..layers.projection import Projection
+from ..layers.channel_mlp import ChannelMLP
+from ..layers.embeddings import GridEmbedding
 from ..layers.padding import DomainPadding
-from ..blocks.fno_block import SpectralBlock3D
+from ..layers.fno_block import SpectralBlock3D
 
 class FNO3D(nn.Module):
     """
     Refined 3D Fourier Neural Operator model.
     Includes Domain Padding and Instance Normalization for improved stability.
+    Structure: [pos_emb] -> lifting -> n_layers x SpectralBlock3D -> projection
+    
+    Matches the architecture of neuraloperator.models.FNO.
     """
     hidden_channels: int
     n_layers: int
     n_modes: Tuple[int, int, int]
     out_channels: int
-    projection_hidden_dim: int = 128
+    lifting_channel_ratio: int = 2
+    projection_channel_ratio: int = 2
+    use_grid: bool = True
+    fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
+    channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
+    use_channel_mlp: bool = True
     padding: Union[float, List[float]] = 0.0
     use_norm: bool = True
+    activation: Callable = nn.gelu
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -50,30 +59,54 @@ class FNO3D(nn.Module):
         """
         original_shape = x.shape
         
-        # 1. Domain Padding (to handle non-periodic conditions)
-        if self.padding > 0:
+        # Check if padding is needed (handles both float and list)
+        needs_pad = (
+            any(p > 0 for p in self.padding)
+            if isinstance(self.padding, (list, tuple))
+            else self.padding > 0
+        )
+        
+        # 1. Positional Embedding (Grid)
+        if self.use_grid:
+            x = GridEmbedding(grid_boundaries=((0.0, 1.0), (0.0, 1.0), (0.0, 1.0)))(x)
+            
+        # 2. Domain Padding (to handle non-periodic conditions)
+        if needs_pad:
             pad_layer = DomainPadding(padding=self.padding)
             x = pad_layer(x)
             
-        # 2. Lifting: (batch, nx_p, ny_p, nz_p, in_ch) -> (batch, ..., hidden_channels)
-        x = Lifting(hidden_channels=self.hidden_channels)(x)
+        # 3. Lifting: encoder MLP -> project to hidden_channels
+        lifting_hidden = self.hidden_channels * self.lifting_channel_ratio
+        x = ChannelMLP(
+            out_channels=self.hidden_channels,
+            hidden_channels=lifting_hidden,
+            n_layers=2,
+            activation=self.activation
+        )(x)
         
-        # 3. Iterative FNO blocks
+        # 4. Iterative FNO blocks
         for _ in range(self.n_layers):
             x = SpectralBlock3D(
                 hidden_channels=self.hidden_channels, 
                 n_modes=self.n_modes,
-                use_norm=self.use_norm
+                activation=self.activation,
+                use_norm=self.use_norm,
+                skip_type=self.fno_skip,
+                channel_mlp_skip=self.channel_mlp_skip,
+                use_channel_mlp=self.use_channel_mlp
             )(x)
             
-        # 4. Projection
-        x = Projection(
+        # 5. Projection: decoder MLP -> project to desired output channels
+        projection_hidden = self.hidden_channels * self.projection_channel_ratio
+        x = ChannelMLP(
             out_channels=self.out_channels, 
-            hidden_dim=self.projection_hidden_dim
+            hidden_channels=projection_hidden,
+            n_layers=2,
+            activation=self.activation
         )(x)
         
-        # 5. Inverse Domain Padding (Crop)
-        if self.padding > 0:
+        # 6. Inverse Domain Padding (Crop)
+        if needs_pad:
             x = pad_layer(x, inverse=True, original_shape=original_shape)
             
         return x

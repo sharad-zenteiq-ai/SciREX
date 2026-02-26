@@ -29,6 +29,55 @@ import jax
 import jax.numpy as jnp
 from scirex.operators.models.fno2d import FNO2D
 from scirex.training.train_state import create_train_state
+from scirex.operators.layers.fno_block import SpectralBlock, SpectralBlock3D
+
+def test_spectral_block_shape():
+    """Test 2D SpectralBlock forward pass shape."""
+    rng = jax.random.PRNGKey(0)
+    batch, nx, ny, channels = 2, 16, 16, 32
+    n_modes = (8, 8)
+    
+    model = SpectralBlock(hidden_channels=channels, n_modes=n_modes)
+    x = jnp.ones((batch, nx, ny, channels))
+    
+    params = model.init(rng, x)
+    y = model.apply(params, x)
+    
+    assert y.shape == (batch, nx, ny, channels)
+
+def test_spectral_block_3d_shape():
+    """Test 3D SpectralBlock forward pass shape."""
+    rng = jax.random.PRNGKey(0)
+    batch, nx, ny, nz, channels = 2, 8, 8, 8, 16
+    n_modes = (4, 4, 4)
+    
+    model = SpectralBlock3D(hidden_channels=channels, n_modes=n_modes)
+    x = jnp.ones((batch, nx, ny, nz, channels))
+    
+    params = model.init(rng, x)
+    y = model.apply(params, x)
+    
+    assert y.shape == (batch, nx, ny, nz, channels)
+
+def test_spectral_block_configs():
+    """Test SpectralBlock with various flags (norm, no mlp)."""
+    rng = jax.random.PRNGKey(0)
+    batch, nx, ny, channels = 2, 8, 8, 16
+    n_modes = (4, 4)
+    
+    # Test with norm and without channel MLP
+    model = SpectralBlock(
+        hidden_channels=channels, 
+        n_modes=n_modes,
+        use_norm=True,
+        use_channel_mlp=False
+    )
+    x = jnp.ones((batch, nx, ny, channels))
+    
+    params = model.init(rng, x)
+    y = model.apply(params, x)
+    
+    assert y.shape == (batch, nx, ny, channels)
 
 def test_forward_shape():
     rng = jax.random.PRNGKey(0)

@@ -78,7 +78,7 @@ def random_poisson_3d_batch(
     channels: int = 1, 
     rng_seed: int = 0, 
     max_modes: int = 3,
-    include_mesh: bool = False
+    include_mesh: bool = True
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Create a single batch of (f, u) pairs in 3D.
@@ -112,23 +112,29 @@ def random_poisson_3d_batch(
 
     f_batch_pure = np.zeros((batch_size, nx, ny, nz, 1), dtype=np.float32)
     
+    # Precompute wavenumbers for GRF
+    kx = np.fft.fftfreq(nx, d=1.0) * nx
+    ky = np.fft.fftfreq(ny, d=1.0) * ny
+    kz = np.fft.fftfreq(nx, d=1.0) * nz
+    Kx, Ky, Kz = np.meshgrid(kx, ky, kz, indexing="ij")
+    k_sq = Kx**2 + Ky**2 + Kz**2
+    
+    alpha = 2.0
+    tau = 3.0
+    inv_eigen = 1.0 / ((k_sq + tau**2) ** alpha)
+    inv_eigen[0, 0, 0] = 0.0 # Zero mean
+    
     for b in range(batch_size):
-        field = np.zeros((nx, ny, nz), dtype=np.float32)
-        nmodes = rng.integers(1, max_modes + 1)
-        for _ in range(nmodes):
-            ax = rng.integers(1, max(2, nx // 4))
-            ay = rng.integers(1, max(2, ny // 4))
-            az = rng.integers(1, max(2, nz // 4))
-            amp = float(rng.normal(0, 1.0))
-            phase = rng.uniform(0, 2 * np.pi)
-            field += amp * np.sin(ax * X + ay * Y + az * Z + phase)
-            
+        noise = rng.normal(size=(nx, ny, nz)) + 1j * rng.normal(size=(nx, ny, nz))
+        F_hat = noise * inv_eigen * nx * ny * nz
+        field = np.fft.ifftn(F_hat).real
+        
         std = np.std(field)
         if std > 0:
             field = field / std * 1.0
         f_batch_pure[b, ..., 0] = field
 
-    u_batch = solve_poisson_periodic_batch_3d(f_batch_pure) * 1000
+    u_batch = solve_poisson_periodic_batch_3d(f_batch_pure)
     
     if include_mesh:
         # Create coordinates batch: (batch, nx, ny, nz, 3)
@@ -152,7 +158,7 @@ def generator(
     nz: int,
     channels: int = 1,
     rng_seed: int = 0,
-    include_mesh: bool = False
+    include_mesh: bool = True
 ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
     """
     Yields num_batches batches of (f, u) pairs.

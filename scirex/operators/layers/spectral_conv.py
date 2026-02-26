@@ -34,6 +34,7 @@ class SpectralConv2D(nn.Module):
     in_channels: int
     out_channels: int
     n_modes: Tuple[int, int]
+    init_std: float = None # If None, uses (2 / (in + out))**0.5
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -42,11 +43,17 @@ class SpectralConv2D(nn.Module):
         modes_x, modes_y = self.n_modes
 
         # 1. FFT
-        x_ft = jnp.fft.rfftn(x, axes=(1, 2))
+        x_ft = jnp.fft.rfftn(x, axes=(1, 2), norm="ortho")
 
         # 2. Weights
         weights_shape = (in_channels, self.out_channels, modes_x, modes_y)
-        scale = 1.0 / (in_channels * self.out_channels)
+        
+        # Xavier/Glorot initialization scale (standard in original neuraloperator)
+        if self.init_std is None:
+            scale = (2.0 / (in_channels + self.out_channels))**0.5
+        else:
+            scale = self.init_std
+            
         w1 = self.param('weights1', jax.nn.initializers.normal(stddev=scale), weights_shape, jnp.complex64)
         w2 = self.param('weights2', jax.nn.initializers.normal(stddev=scale), weights_shape, jnp.complex64)
 
@@ -63,7 +70,7 @@ class SpectralConv2D(nn.Module):
         )
 
         # 4. Inverse FFT
-        x = jnp.fft.irfftn(out_ft, s=(nx, ny), axes=(1, 2))
+        x = jnp.fft.irfftn(out_ft, s=(nx, ny), axes=(1, 2), norm="ortho")
         return x
 
 class SpectralConv3D(nn.Module):
@@ -73,6 +80,7 @@ class SpectralConv3D(nn.Module):
     in_channels: int
     out_channels: int
     n_modes: Tuple[int, int, int]
+    init_std: float = None
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -81,11 +89,16 @@ class SpectralConv3D(nn.Module):
         modes_x, modes_y, modes_z = self.n_modes
 
         # 1. FFT
-        x_ft = jnp.fft.rfftn(x, axes=(1, 2, 3))
+        x_ft = jnp.fft.rfftn(x, axes=(1, 2, 3), norm="ortho")
 
         # 2. Weights
         weights_shape = (in_channels, self.out_channels, modes_x, modes_y, modes_z)
-        scale = 1.0 / (in_channels * self.out_channels)
+        
+        if self.init_std is None:
+            scale = (2.0 / (in_channels + self.out_channels))**0.5
+        else:
+            scale = self.init_std
+            
         w1 = self.param('weights1', jax.nn.initializers.normal(stddev=scale), weights_shape, jnp.complex64)
         w2 = self.param('weights2', jax.nn.initializers.normal(stddev=scale), weights_shape, jnp.complex64)
         w3 = self.param('weights3', jax.nn.initializers.normal(stddev=scale), weights_shape, jnp.complex64)
@@ -109,5 +122,5 @@ class SpectralConv3D(nn.Module):
         )
 
         # 4. Inverse FFT
-        x = jnp.fft.irfftn(out_ft, s=(nx, ny, nz), axes=(1, 2, 3))
+        x = jnp.fft.irfftn(out_ft, s=(nx, ny, nz), axes=(1, 2, 3), norm="ortho")
         return x

@@ -23,53 +23,171 @@
 # please contact: contact@scirex.org
 
 """
-Configuration for FNO experiments on Poisson equation (2D and 3D).
+Experiment configurations for FNO on Poisson equation (2D and 3D).
+
+These configs compose a *model preset* from ``configs.models`` with
+experiment-specific training and data-generation parameters.
+
+Usage
+-----
+    from configs.poisson_fno_config import FNO2DConfig, FNO3DConfig
+
+    config = FNO2DConfig()
+    # config.model   → FNO_Medium2D instance  (architecture params)
+    # config.*       → training / data params  (lr, batch_size, …)
 """
 
+from dataclasses import dataclass, field
+from typing import Literal
+from configs.models import FNO_Medium2D, FNO_Medium3D
+
+
+@dataclass
 class FNO2DConfig:
-    # Model Architecture
-    n_modes = (16, 16)
-    hidden_channels = 64
-    n_layers = 4
-    in_channels = 1
-    out_channels = 1
+    """Full experiment config for 2D Poisson + FNO."""
 
-    # Training Parameters
-    learning_rate = 1e-3
-    weight_decay = 1e-4
-    batch_size = 32
-    epochs = 501  # Total training epochs
-    steps_per_epoch = 100  # Number of batches per epoch
+    # ── Model Architecture (preset, can be swapped) ──
+    model: FNO_Medium2D = field(default_factory=FNO_Medium2D)
 
-    # LR Scheduler (StepLR equivalent)
-    scheduler_step_size = 100  # Decay LR every N epochs
-    scheduler_gamma = 0.5  # Decay factor
+    # ── Training Parameters ──
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-4
+    batch_size: int = 32
+    epochs: int = 501
+    steps_per_epoch: int = 100
 
-    # Data Generation
-    resolution = (64, 64)
-    seed = 42
+    # ── LR Scheduler ──
+    scheduler_type: Literal["step", "cosine"] = "cosine"
+    scheduler_step_size: int = 100   # used only when scheduler_type="step"
+    scheduler_gamma: float = 0.5     # used only when scheduler_type="step"
+
+    # ── Data Generation ──
+    resolution: tuple = (64, 64)
+    seed: int = 42
+
+    # ── Convenience properties that proxy into the model preset ──
+    @property
+    def n_modes(self):
+        return self.model.n_modes
+
+    @property
+    def hidden_channels(self):
+        return self.model.hidden_channels
+
+    @property
+    def n_layers(self):
+        return self.model.n_layers
+
+    @property
+    def in_channels(self):
+        return self.model.in_channels
+
+    @property
+    def out_channels(self):
+        return self.model.out_channels
+    
+    @property
+    def lifting_channel_ratio(self):
+        return self.model.lifting_channel_ratio
+
+    @property
+    def projection_channel_ratio(self):
+        return self.model.projection_channel_ratio
+    
+    @property
+    def use_grid(self):
+        return self.model.use_grid
+
+    @property
+    def fno_skip(self):
+        return self.model.fno_skip
+    
+    @property
+    def use_channel_mlp(self):
+        return self.model.use_channel_mlp
+
+    @property
+    def channel_mlp_skip(self):
+        return self.model.channel_mlp_skip
+
+    @property
+    def domain_padding(self):
+        return self.model.domain_padding
 
 
+@dataclass
 class FNO3DConfig:
-    # Model Architecture
-    n_modes = (12, 12, 12)
-    hidden_channels = 32
-    n_layers = 4
-    in_channels = 4  # (source f, x, y, z)
-    out_channels = 1
+    """Full experiment config for 3D Poisson + FNO."""
 
-    # Training Parameters
-    learning_rate = 1e-3
-    weight_decay = 1e-4
-    batch_size = 4  # Reduced for 3D memory constraints
-    epochs = 101    # Standard run length
-    steps_per_epoch = 50 
+    # ── Model Architecture (preset, can be swapped) ──
+    model: FNO_Medium3D = field(default_factory=FNO_Medium3D)
 
-    # LR Scheduler (StepLR equivalent)
-    scheduler_step_size = 30
-    scheduler_gamma = 0.5
+    # ── Training Parameters ──
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-4
+    batch_size: int = 4
+    epochs: int = 101
+    steps_per_epoch: int = 50
 
-    # Data Generation
-    resolution = (32, 32, 32)
-    include_mesh = True
-    seed = 42
+    # ── LR Scheduler ──
+    scheduler_type: Literal["step", "cosine"] = "cosine"
+    scheduler_step_size: int = 30    # used only when scheduler_type="step"
+    scheduler_gamma: float = 0.5     # used only when scheduler_type="step"
+
+    # ── Data Generation ──
+    resolution: tuple = (32, 32, 32)
+    include_mesh: bool = False # Now redundant as model handles it
+    seed: int = 42
+
+    # ── Convenience properties that proxy into the model preset ──
+    @property
+    def n_modes(self):
+        return self.model.n_modes
+
+    @property
+    def hidden_channels(self):
+        return self.model.hidden_channels
+
+    @property
+    def n_layers(self):
+        return self.model.n_layers
+
+    @property
+    def in_channels(self):
+        return self.model.in_channels
+
+    @property
+    def out_channels(self):
+        return self.model.out_channels
+
+    @property
+    def lifting_channel_ratio(self):
+        return self.model.lifting_channel_ratio
+
+    @property
+    def projection_channel_ratio(self):
+        return self.model.projection_channel_ratio
+
+    @property
+    def use_grid(self):
+        return self.model.use_grid
+
+    @property
+    def use_norm(self):
+        return self.model.use_norm
+
+    @property
+    def fno_skip(self):
+        return self.model.fno_skip
+    
+    @property
+    def use_channel_mlp(self):
+        return self.model.use_channel_mlp
+
+    @property
+    def channel_mlp_skip(self):
+        return self.model.channel_mlp_skip
+
+    @property
+    def domain_padding(self):
+        return self.model.domain_padding

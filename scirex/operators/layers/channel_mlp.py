@@ -22,16 +22,34 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
+from typing import Optional, Callable
 from flax import linen as nn
 import jax.numpy as jnp
 
-class Lifting(nn.Module):
+class ChannelMLP(nn.Module):
     """
-    Lifting layer: projects the input to a higher-dimensional space (hidden_channels).
-    Usually a pointwise 1x1 convolution (Dense layer).
+    Multi-layer perceptron applied channel-wise across spatial dimensions.
+    Equivalent to neuraloperator's ChannelMLP, but implemented in Flax.
+    
+    This is used for both Lifting and Projection in the FNO architecture.
     """
-    hidden_channels: int
+    out_channels: int
+    hidden_channels: Optional[int] = None
+    n_layers: int = 1
+    activation: Callable = nn.gelu
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return nn.Dense(self.hidden_channels)(x)
+        hidden = self.hidden_channels if self.hidden_channels is not None else self.out_channels
+        
+        for i in range(self.n_layers):
+            # Last layer projects to out_channels, others to hidden
+            is_last = (i == self.n_layers - 1)
+            layer_out = self.out_channels if is_last else hidden
+            
+            x = nn.Dense(layer_out)(x)
+            
+            if not is_last:
+                x = self.activation(x)
+                
+        return x
