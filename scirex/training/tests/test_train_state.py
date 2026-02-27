@@ -27,7 +27,7 @@ import jax.numpy as jnp
 import pytest
 from flax.training.train_state import TrainState
 
-from scirex.operators.models.fno2d import FNO2D
+from scirex.operators.models.fno import FNO2D
 from scirex.training.train_state import create_train_state
 
 

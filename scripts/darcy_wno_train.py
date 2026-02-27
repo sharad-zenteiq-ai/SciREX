@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 # Force use of top-level scirex folder
-project_root = str(Path(__file__).parents[2])
+project_root = str(Path(__file__).parents[1])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -37,7 +37,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from scirex.operators.models.wno2d import WNO2D
+from scirex.operators.models.wno import WNO2D
 from scirex.training.train_state import create_train_state
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import lp_loss, mse

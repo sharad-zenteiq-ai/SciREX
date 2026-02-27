@@ -83,7 +83,7 @@ class FNOConfig(ModelConfig):
     hidden_channels : int
         Width of the spectral layers.
     n_layers : int
-        Number of spectral blocks.
+        Number of FNO blocks.
     in_channels : int
         Input channels (e.g. 1 for a scalar field).
     out_channels : int
@@ -105,7 +105,7 @@ class FNOConfig(ModelConfig):
         Used by both ``FNO2D`` and ``FNO3D``.
     use_norm : bool
         Whether to apply instance normalization inside each
-        ``SpectralBlock``.
+        ``FNOBlock``.
     """
     arch: str = "fno"
     n_modes: tuple = (16, 16)

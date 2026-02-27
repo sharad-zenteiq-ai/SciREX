@@ -27,17 +27,17 @@ Unit test for forward pass shape of the FNO2D model.
 """
 import jax
 import jax.numpy as jnp
-from scirex.operators.models.fno2d import FNO2D
+from scirex.operators.models.fno import FNO2D
 from scirex.training.train_state import create_train_state
-from scirex.operators.layers.fno_block import SpectralBlock, SpectralBlock3D
+from scirex.operators.layers.fno_block import FNOBlock, FNOBlock3D
 
-def test_spectral_block_shape():
-    """Test 2D SpectralBlock forward pass shape."""
+def test_fno_block_shape():
+    """Test 2D FNOBlock forward pass shape."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, channels = 2, 16, 16, 32
     n_modes = (8, 8)
     
-    model = SpectralBlock(hidden_channels=channels, n_modes=n_modes)
+    model = FNOBlock(hidden_channels=channels, n_modes=n_modes)
     x = jnp.ones((batch, nx, ny, channels))
     
     params = model.init(rng, x)
@@ -45,13 +45,13 @@ def test_spectral_block_shape():
     
     assert y.shape == (batch, nx, ny, channels)
 
-def test_spectral_block_3d_shape():
-    """Test 3D SpectralBlock forward pass shape."""
+def test_fno_block_3d_shape():
+    """Test 3D FNOBlock forward pass shape."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, nz, channels = 2, 8, 8, 8, 16
     n_modes = (4, 4, 4)
     
-    model = SpectralBlock3D(hidden_channels=channels, n_modes=n_modes)
+    model = FNOBlock3D(hidden_channels=channels, n_modes=n_modes)
     x = jnp.ones((batch, nx, ny, nz, channels))
     
     params = model.init(rng, x)
@@ -59,14 +59,14 @@ def test_spectral_block_3d_shape():
     
     assert y.shape == (batch, nx, ny, nz, channels)
 
-def test_spectral_block_configs():
-    """Test SpectralBlock with various flags (norm, no mlp)."""
+def test_fno_block_configs():
+    """Test FNOBlock with various flags (norm, no mlp)."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, channels = 2, 8, 8, 16
     n_modes = (4, 4)
     
     # Test with norm and without channel MLP
-    model = SpectralBlock(
+    model = FNOBlock(
         hidden_channels=channels, 
         n_modes=n_modes,
         use_norm=True,

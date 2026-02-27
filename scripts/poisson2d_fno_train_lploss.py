@@ -32,7 +32,7 @@ os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + " --xla_gpu_determin
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 # Ensure project root is in path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -46,7 +46,7 @@ import time
 import matplotlib.pyplot as plt
 import json
 
-from scirex.operators.models.fno2d import FNO2D
+from scirex.operators.models.fno import FNO2D
 from scirex.training.train_state import create_train_state, TrainState
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import mse, lp_loss
@@ -142,7 +142,7 @@ def main():
     )
     
     # Create checkpoint directory and results directory
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     
     # 3. Initialize Optimizer & Scheduler
     # Override steps_per_epoch based on actual n_train if provided

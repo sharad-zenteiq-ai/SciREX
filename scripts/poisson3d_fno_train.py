@@ -27,7 +27,7 @@ import os
 import sys
 
 # Ensure project root is in path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -41,11 +41,11 @@ import time
 import matplotlib.pyplot as plt
 import json
 
-from scirex.operators.models.fno3d import FNO3D
+from scirex.operators.models.fno import FNO3D
 from scirex.training.train_state import create_train_state, TrainState
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import mse, lp_loss
-from scirex.data.datasets.poisson_3d import generator as poisson3d_generator
+from scirex.data.datasets.poisson import generator_3d as poisson3d_generator
 from configs.poisson_fno_config import FNO3DConfig
 
 

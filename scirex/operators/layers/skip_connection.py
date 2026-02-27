@@ -28,8 +28,10 @@ import jax.numpy as jnp
 
 class SoftGating(nn.Module):
     """
-    Applies soft-gating by weighting the channels of the given input.
-    Equivalent to neuraloperator's SoftGating.
+    Parametric channel-wise gating mechanism.
+    
+    Multiplies each channel by a learnable scalar weight. Helps the model 
+    dynamically prioritize certain feature channels during the bypass operation.
     """
     in_channels: int
 
@@ -46,8 +48,11 @@ class SoftGating(nn.Module):
 
 class SkipConnection(nn.Module):
     """
-    A unified skip connection layer supporting identity, linear, and soft-gating.
-    Matches neuraloperator's skip_connection wrapper.
+    Generic Skip (Bypass) Connection.
+    
+    Provides a parallel path to the spectral transformations, capturing 
+    local information and facilitating gradient flow. 
+    Matches the flexibility of the standard neuraloperator implementation.
     """
     out_channels: int
     skip_type: Literal["identity", "linear", "soft-gating"] = "linear"

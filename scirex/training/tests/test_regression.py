@@ -25,7 +25,7 @@
 import jax
 import jax.numpy as jnp
 import optax
-from scirex.operators.models.fno2d import FNO2D
+from scirex.operators.models.fno import FNO2D
 from scirex.training.train_state import create_train_state
 
 def test_fno2d_overfit_toy():
@@ -48,7 +48,7 @@ def test_fno2d_overfit_toy():
     x = jax.random.normal(rng, (batch, nx, ny, in_channels))
     y_target = x * 2.0 # Simple target
     
-    state = create_train_state(rng, model, (batch, nx, ny, in_channels), learning_rate=1e-2)
+    state = create_train_state(rng, model, (batch, nx, ny, in_channels), learning_rate=5e-4)
     
     @jax.jit
     def train_step(state, x, y):
@@ -61,7 +61,7 @@ def test_fno2d_overfit_toy():
         return state, loss
 
     initial_loss = 0
-    for i in range(100):
+    for i in range(500):
         state, loss = train_step(state, x, y_target)
         if i == 0:
             initial_loss = loss

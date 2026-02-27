@@ -22,11 +22,15 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
+"""
+Unit tests for the FNO2D and FNO3D model architectures.
+Verifies forward pass shapes and parameter consistency.
+"""
+
 import jax
 import jax.numpy as jnp
 import pytest
-from scirex.operators.models.fno2d import FNO2D
-from scirex.operators.models.fno3d import FNO3D
+from scirex.operators.models.fno import FNO2D, FNO3D
 
 @pytest.mark.parametrize("n_modes", [(8, 8), (4, 4)])
 @pytest.mark.parametrize("hidden_channels", [32, 64])

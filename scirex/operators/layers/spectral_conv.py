@@ -29,7 +29,21 @@ import jax.numpy as jnp
 
 class SpectralConv2D(nn.Module):
     """
-    2D Spectral Convolution Layer.
+    Two-dimensional Spectral Convolution layer.
+    
+    This layer performs a convolution in the Fourier domain by:
+    1. Transforming the input to the frequency domain using a Real Fast Fourier Transform (RFFT).
+    2. Multiplying the lower Fourier modes by learnable complex weights.
+    3. Inverse transforming the filtered signal back to the spatial domain.
+    
+    This operation provides a global receptive field, as each Fourier mode 
+    carries information from the entire spatial domain.
+    
+    Attributes:
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+        n_modes (Tuple[int, int]): Number of Fourier modes to retain for each dimension.
+        init_std (float, optional): Standard deviation for weight initialization.
     """
     in_channels: int
     out_channels: int
@@ -74,7 +88,10 @@ class SpectralConv2D(nn.Module):
 
 class SpectralConv3D(nn.Module):
     """
-    3D Spectral Convolution Layer.
+    Three-dimensional Spectral Convolution layer.
+    
+    Extension of SpectralConv2D for volumetric or spatio-temporal data. 
+    Performs 3D RFFT and filters modes in a 3D frequency cube.
     """
     in_channels: int
     out_channels: int

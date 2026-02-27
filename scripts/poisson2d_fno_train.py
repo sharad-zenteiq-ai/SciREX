@@ -22,12 +22,23 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-"""Train a Flax FNO to learn the Poisson solution operator (f -> u)."""
+"""
+2D Poisson Equation Solver Training Script.
+
+This script trains a Fourier Neural Operator (FNO-2D) to learn the mapping 
+from the source term 'f' to the solution field 'u' for the Poisson equation 
+-∇²u = f on a periodic domain. 
+
+Features:
+- Physics-based Relative L2 and MSE losses.
+- Configurable learning rate schedules (StepLR, Cosine).
+- Periodic evaluation and result visualization.
+"""
 import os
 import sys
 
 # Ensure project root is in path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -41,7 +52,7 @@ import time
 import matplotlib.pyplot as plt
 import json
 
-from scirex.operators.models.fno2d import FNO2D
+from scirex.operators.models.fno import FNO2D
 from scirex.training.train_state import create_train_state, TrainState
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import mse, lp_loss

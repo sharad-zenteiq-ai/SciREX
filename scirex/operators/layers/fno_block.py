@@ -29,10 +29,22 @@ from .spectral_conv import SpectralConv2D, SpectralConv3D
 from .skip_connection import SkipConnection
 from .channel_mlp import ChannelMLP
 
-class SpectralBlock(nn.Module):
+class FNOBlock(nn.Module):
     """
-    2D FNO Block: SpectralConv2D + SkipConnection + Optional ChannelMLP.
-    Equivalent to one layer of neuraloperator's FNOBlocks.
+    Two-dimensional Fourier Neural Operator (FNO) Block.
+    
+    This block implements a single iterative step of the FNO architecture, 
+    combining a spectral convolution for global feature learning with a 
+    standard convolution (via SkipConnection) for local feature refinement.
+    
+    Attributes:
+        hidden_channels (int): Dimensionality of the latent representation.
+        n_modes (Tuple[int, int]): Number of Fourier modes to retain in each spatial dimension.
+        activation (Callable): Nonlinear activation function (default: nn.gelu).
+        use_norm (bool): Whether to apply Instance Normalization for training stability.
+        skip_type (str): Type of bypass connection ('identity', 'linear', or 'soft-gating').
+        channel_mlp_skip (str): Type of bypass connection for the Channel MLP refinement.
+        use_channel_mlp (bool): Whether to include a point-wise MLP after the spectral layers.
     """
     hidden_channels: int
     n_modes: Tuple[int, int]
@@ -44,20 +56,20 @@ class SpectralBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        # 1. Spectral branch
+        # Step 1: Global feature extraction via Spectral Convolution
         y_s = SpectralConv2D(
             in_channels=self.hidden_channels, 
             out_channels=self.hidden_channels, 
             n_modes=self.n_modes
         )(x)
         
-        # 2. Skip branch
+        # Step 2: Local feature extraction via Spatial Skip Connection
         y_p = SkipConnection(
             out_channels=self.hidden_channels, 
             skip_type=self.skip_type
         )(x)
         
-        # 3. Combine and Activation
+        # Step 3: Branch fusion and stabilization
         x = y_s + y_p
         
         if self.use_norm:
@@ -65,7 +77,8 @@ class SpectralBlock(nn.Module):
         
         x = self.activation(x)
 
-        # 4. Optional Channel MLP (the "modern" FNO refinement)
+        # Step 4: Point-wise refinement (Channel MLP)
+        # Often referred to as the 'modern' FNO variant or 'FNO-MLP'
         if self.use_channel_mlp:
             y_mlp = ChannelMLP(
                 out_channels=self.hidden_channels,
@@ -84,9 +97,12 @@ class SpectralBlock(nn.Module):
 
         return x
 
-class SpectralBlock3D(nn.Module):
+class FNOBlock3D(nn.Module):
     """
-    3D FNO Block: SpectralConv3D + SkipConnection + Optional ChannelMLP.
+    Three-dimensional Fourier Neural Operator (FNO) Block.
+    
+    Extension of the 2D FNO block for volumetric or time-dependent 2D data.
+    Utilizes 3D spectral convolutions to capture spatio-temporal correlations.
     """
     hidden_channels: int
     n_modes: Tuple[int, int, int]

@@ -22,23 +22,26 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
+"""
+`scirex.operators` provides the core neural operator architectures and their 
+constituent layers, including Fourier Neural Operators (FNO) and Wavelet 
+Neural Operators (WNO).
+"""
+
 # ── Layers ──
 from .layers.channel_mlp import ChannelMLP
 from .layers.spectral_conv import SpectralConv2D, SpectralConv3D
 from .layers.padding import DomainPadding
 from .layers.embeddings import GridEmbedding
 from .layers.skip_connection import SkipConnection, SoftGating
-from .layers.fno_block import SpectralBlock, SpectralBlock3D
+from .layers.fno_block import FNOBlock, FNOBlock3D
 from .layers.wavelet_conv import WaveletConv1D, WaveletConv2D
 from .layers.wavelet_block import WaveletBlock1D, WaveletBlock2D
 from .layers.fast_wavelet_conv import LiftingWaveletConv2D
 
 # ── Models ──
-from .models.fno2d import FNO2D
-from .models.fno3d import FNO3D
-from .models.wno1d import WNO1D
-from .models.wno2d import WNO2D
-from .models.fwno2d import FWNO2D
+from .models.fno import FNO2D, FNO3D
+from .models.wno import WNO1D, WNO2D, FWNO2D
 
 # ── GNO / Future Layers ──
 from .layers.integral_transform import IntegralTransform

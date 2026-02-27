@@ -28,11 +28,15 @@ import jax.numpy as jnp
 
 class GridEmbedding(nn.Module):
     """
-    Appends normalized grid coordinates to the input tensor.
-    Equivalent to neuraloperator's GridEmbeddingND.
+    Cartesian Coordinate Embedding (Grid Features).
     
-    For a 2D input (batch, nx, ny, c), it appends 2 channels (x, y).
-    For a 3D input (batch, nx, ny, nz, c), it appends 3 channels (x, y, z).
+    Appends normalized spatial coordinates (x, y, z, ...) as additional 
+    input channels. This breaks translation invariance and provides the 
+    neural operator with explicit geometric context, allowing it to 
+    learn location-dependent behaviors.
+
+    Attributes:
+        grid_boundaries (Tuple): Start and end points for each spatial dimension.
     """
     grid_boundaries: Tuple[Tuple[float, float], ...] = ((0.0, 1.0), (0.0, 1.0))
 

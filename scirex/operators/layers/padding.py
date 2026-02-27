@@ -28,16 +28,17 @@ import jax.numpy as jnp
 
 class DomainPadding(nn.Module):
     """
-    Applies domain padding to the input tensor.
-    This is used to handle non-periodic boundary conditions in FNO.
+    Symmetric Spatial Domain Padding.
     
-    Parameters
-    ----------
-    padding : float or list of floats
-        The percentage of padding to apply per dimension.
-        If a single float, the same padding is applied to all spatial dimensions.
-    mode : str
-        The padding mode. Default is 'constant' (zero padding).
+    FNO models assume periodic boundary conditions due to the underlying FFT.
+    DomainPadding mitigates boundary artifacts when dealing with non-periodic 
+    PDEs by expanding the spatial domain before processing and cropping 
+    the result back to the original resolution.
+
+    Args:
+        padding (float or List[float]): Percentage of padding (0.0 to 1.0) 
+            to apply per spatial dimension.
+        mode (str): JAX padding mode (default: 'constant' for zero-padding).
     """
     padding: Union[float, List[float]]
     mode: str = 'constant'

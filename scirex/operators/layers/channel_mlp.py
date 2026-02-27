@@ -28,10 +28,17 @@ import jax.numpy as jnp
 
 class ChannelMLP(nn.Module):
     """
-    Multi-layer perceptron applied channel-wise across spatial dimensions.
-    Equivalent to neuraloperator's ChannelMLP, but implemented in Flax.
+    Point-wise Multi-layer Perceptron (Channel MLP).
     
-    This is used for both Lifting and Projection in the FNO architecture.
+    This module applies an MLP independently to each spatial location (pixel/voxel) 
+    across the channel dimension. It is a core component of the modern FNO 
+    refinement, helping the model learn complex, localized channel interactions.
+
+    Attributes:
+        out_channels (int): Dimensionality of the output representation.
+        hidden_channels (int, optional): Width of the internal hidden layers.
+        n_layers (int): Total number of linear transformations.
+        activation (Callable): Activation function between layers.
     """
     out_channels: int
     hidden_channels: Optional[int] = None
