@@ -50,16 +50,17 @@ class FNO2DConfig:
     model: FNO_Medium2D = field(default_factory=FNO_Medium2D)
 
     # ── Training Parameters ──
-    learning_rate: float = 1e-3
+    learning_rate: float = 5e-3
     weight_decay: float = 1e-4
     batch_size: int = 32
-    epochs: int = 1000
-    steps_per_epoch: int = 50
+    epochs: int = 200
+    steps_per_epoch: int = 10
     n_test: int = 200
-    n_train: int = 2000
+    n_train: int = 1000
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"
+    cosine_decay_epochs: int = 100  # Cosine LR reaches 0 at this epoch; extra epochs fine-tune at ~0 LR
     scheduler_step_size: int = 100   # used only when scheduler_type="step"
     scheduler_gamma: float = 0.5     # used only when scheduler_type="step"
 

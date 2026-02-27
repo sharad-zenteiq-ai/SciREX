@@ -26,6 +26,11 @@
 import os
 import sys
 
+# ── Force deterministic GPU operations for reproducibility ──
+# Must be set BEFORE importing JAX so XLA picks it up at init time.
+os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + " --xla_gpu_deterministic_ops=true"
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+
 # Ensure project root is in path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
@@ -50,18 +55,26 @@ from configs.poisson_fno_config import FNO2DConfig
 
 
 def make_schedule(config: FNO2DConfig):
-    """Create learning rate schedule with Linear Warmup and Cosine Decay."""
+    """Create learning rate schedule with Linear Warmup and Cosine Decay.
+    
+    The cosine decay is over `cosine_decay_epochs` (default 100). Any epochs
+    beyond that train at near-zero LR (fine-tuning). This means increasing
+    `epochs` never degrades performance — it only adds bonus polishing time.
+    """
     spe = getattr(config, "steps_per_epoch_actual", config.steps_per_epoch)
     total_steps = config.epochs * spe
     
-    # Neural operator best practice: linear warmup to prevent early divergence
-    warmup_steps = min(1000, total_steps // 10)
+    # Fixed warmup: ~10 epochs worth of steps
+    warmup_steps = min(310, total_steps // 10)
     
     if config.scheduler_type == "cosine":
-        # Warmup from 0 up to learning_rate, then cosine decay
+        # Cosine decay length is FIXED to cosine_decay_epochs, NOT total epochs.
+        cosine_decay_steps = config.cosine_decay_epochs * spe - warmup_steps
+        cosine_decay_steps = max(cosine_decay_steps, 1)  # safety
+        
         cosine_schedule = optax.cosine_decay_schedule(
             init_value=config.learning_rate,
-            decay_steps=total_steps - warmup_steps,
+            decay_steps=cosine_decay_steps,
             alpha=0.0
         )
         schedule = optax.join_schedules(
@@ -196,7 +209,7 @@ def main():
     os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_path = os.path.join(ckpt_dir, "poisson_fno_params.pkl")
 
-    results_dir = os.path.join(project_root, "experiments/results/poisson")
+    results_dir = os.path.join(project_root, "experiments/results/experiment")
     os.makedirs(results_dir, exist_ok=True)
 
     best_rel_l2 = float("inf")
@@ -294,7 +307,7 @@ def main():
 
     # 6. Plot Loss Curves
     epochs_range = range(len(history["train_rel_l2"]))
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(8, 8))
     
     # Plot Rel L2
     plt.semilogy(epochs_range, history["train_rel_l2"], label='Train Rel L2')
