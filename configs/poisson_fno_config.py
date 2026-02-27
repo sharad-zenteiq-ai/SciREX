@@ -47,15 +47,16 @@ class FNO2DConfig:
     """Full experiment config for 2D Poisson + FNO."""
 
     # ── Model Architecture (preset, can be swapped) ──
-    model: FNO_Large2D = field(default_factory=FNO_Large2D)
+    model: FNO_Medium2D = field(default_factory=FNO_Medium2D)
 
     # ── Training Parameters ──
-    learning_rate: float = 5e-4
+    learning_rate: float = 1e-3
     weight_decay: float = 1e-4
-    batch_size: int = 20
+    batch_size: int = 32
     epochs: int = 1000
     steps_per_epoch: int = 50
     n_test: int = 200
+    n_train: int = 2000
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"

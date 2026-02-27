@@ -50,23 +50,30 @@ from configs.poisson_fno_config import FNO2DConfig
 
 
 def make_schedule(config: FNO2DConfig):
-    """Create learning rate schedule based on config.scheduler_type.
+    """Create learning rate schedule with Linear Warmup and Cosine Decay."""
+    spe = getattr(config, "steps_per_epoch_actual", config.steps_per_epoch)
+    total_steps = config.epochs * spe
     
-    Supports:
-        - "step":   StepLR equivalent (piecewise constant decay)
-        - "cosine": Cosine annealing from lr → 0
-    """
-    total_steps = config.epochs * config.steps_per_epoch
+    # Neural operator best practice: linear warmup to prevent early divergence
+    warmup_steps = min(1000, total_steps // 10)
     
     if config.scheduler_type == "cosine":
-        schedule = optax.cosine_decay_schedule(
+        # Warmup from 0 up to learning_rate, then cosine decay
+        cosine_schedule = optax.cosine_decay_schedule(
             init_value=config.learning_rate,
-            decay_steps=total_steps,
-            alpha=0.0  # final lr = alpha * init_value
+            decay_steps=total_steps - warmup_steps,
+            alpha=0.0
+        )
+        schedule = optax.join_schedules(
+            schedules=[
+                optax.linear_schedule(0.0, config.learning_rate, warmup_steps),
+                cosine_schedule
+            ],
+            boundaries=[warmup_steps]
         )
     elif config.scheduler_type == "step":
         scales = {}
-        decay_steps = config.scheduler_step_size * config.steps_per_epoch
+        decay_steps = config.scheduler_step_size * spe
         num_decays = config.epochs // config.scheduler_step_size
         
         current_scale = 1.0
@@ -121,10 +128,18 @@ def main():
         activation=nn.gelu
     )
     
+    # Create checkpoint directory and results directory
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    
     # 3. Initialize Optimizer & Scheduler
+    # Override steps_per_epoch based on actual n_train if provided
+    n_train = getattr(config, "n_train", config.batch_size * config.steps_per_epoch)
+    steps_per_epoch = n_train // config.batch_size
+    setattr(config, "steps_per_epoch_actual", steps_per_epoch)
+    
     schedule = make_schedule(config)
     # Total steps verification
-    total_steps = config.epochs * config.steps_per_epoch
+    total_steps = config.epochs * steps_per_epoch
     
     # Create Train State
     # Shape: (batch, nx, ny, in_channels)
@@ -141,8 +156,7 @@ def main():
     # 4. Pre-generate FIXED training and test datasets
     # The original FNO paper uses fixed datasets (not infinite random streams).
     # A fixed dataset allows the model to learn fine-grained patterns.
-
-    n_train = config.batch_size * config.steps_per_epoch  # should be 1000
+    # Prioritize config.n_train if it exists, otherwise fallback to batch_size * steps_per_epoch.
     n_test = config.n_test  # should be 200
     
     print(f"Generating {n_train} training samples and {n_test} test samples...")
@@ -193,23 +207,26 @@ def main():
         "test_rel_l2": []
     }
 
-    # 5. Training Loop
+    # 5. Training Step (Optimized for Gradient Stability)
     @jax.jit
-    def train_step_lploss(state: TrainState, batch: dict) -> tuple[TrainState, dict]:
-        def loss_fn_wrap(params):
+    def train_step_lploss(state, batch):
+        def loss_fn(params):
+            # Optimizing for Relative L2 on the encoded scale 
+            # (where gradients are better conditioned O(1))
             pred_encoded = state.apply_fn({"params": params}, batch["x"])
-            # Decode to physical scale directly inside the loss calculation!
-            pred_decoded = pred_encoded * (y_normalizer.std + y_normalizer.eps) + y_normalizer.mean
-            y_decoded = batch["y"] * (y_normalizer.std + y_normalizer.eps) + y_normalizer.mean
-            return lp_loss(pred_decoded, y_decoded)
-        
-        grad_fn = jax.value_and_grad(loss_fn_wrap)
+            return lp_loss(pred_encoded, batch["y"])
+
+        grad_fn = jax.value_and_grad(loss_fn)
         loss, grads = grad_fn(state.params)
-        new_state = state.apply_gradients(grads=grads)
-        return new_state, {"loss": loss}
+        state = state.apply_gradients(grads=grads)
+        return state, {"loss": loss}
 
     print(f"Starting training for {config.epochs} epochs ({total_steps} steps)...")
     rng_key = jax.random.PRNGKey(config.seed + 1)
+    
+    # Final check of data shapes
+    print(f"Data shapes: f_train={f_train.shape}, u_train={u_train.shape}")
+    print(f"Test shapes: f_test={test_batch_encoded['x'].shape}, u_test={u_test.shape}")
 
     for epoch in range(config.epochs):
         epoch_start_time = time.time()
@@ -221,21 +238,23 @@ def main():
         f_shuffled = f_train[perm]
         u_shuffled = u_train[perm]
         
-        for step in range(config.steps_per_epoch):
+        for step in range(steps_per_epoch):
             start_idx = step * config.batch_size
             end_idx = start_idx + config.batch_size
+            
             batch = {
                 "x": f_shuffled[start_idx:end_idx],
                 "y": u_shuffled[start_idx:end_idx]
             }
+            
             state, metrics = train_step_lploss(state, batch)
             epoch_loss += float(metrics["loss"])
             
         epoch_time = time.time() - epoch_start_time
-        avg_train_loss = epoch_loss / config.steps_per_epoch
+        avg_train_loss = epoch_loss / steps_per_epoch
         
         # Evaluate on test set
-        # In neural operator, forward pass output is "encoded" y. We decode it to compare with original.
+        # Forward pass output is "encoded" y.
         test_pred_encoded = state.apply_fn({"params": state.params}, test_batch_encoded["x"])
         test_pred_decoded = y_normalizer.decode(test_pred_encoded)
         
