@@ -29,10 +29,16 @@ from .layers.padding import DomainPadding
 from .layers.embeddings import GridEmbedding
 from .layers.skip_connection import SkipConnection, SoftGating
 from .layers.fno_block import SpectralBlock, SpectralBlock3D
+from .layers.wavelet_conv import WaveletConv1D, WaveletConv2D
+from .layers.wavelet_block import WaveletBlock1D, WaveletBlock2D
+from .layers.fast_wavelet_conv import LiftingWaveletConv2D
 
 # ── Models ──
 from .models.fno2d import FNO2D
 from .models.fno3d import FNO3D
+from .models.wno1d import WNO1D
+from .models.wno2d import WNO2D
+from .models.fwno2d import FWNO2D
 
 # ── GNO / Future Layers ──
 from .layers.integral_transform import IntegralTransform

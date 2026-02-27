@@ -25,15 +25,22 @@
 import os
 # Prevent JAX from pre-allocating all GPU memory
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+import sys
+from pathlib import Path
+
+# Force use of top-level scirex folder
+project_root = str(Path(__file__).parents[2])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from scirex.operators.models.wno2d import WNO2D
-from scirex.operators.layers import Lifting, Projection
 from scirex.training.train_state import create_train_state
 from scirex.training.step_fns import train_step, eval_step
-from scirex.losses.data_losses import relative_l2_loss, mse
+from scirex.losses.data_losses import lp_loss, mse
 from scirex.data.datasets import darcy_zenodo
 import optax
 from scirex.training.normalizers import GaussianNormalizer
@@ -41,9 +48,9 @@ import pickle
 from pathlib import Path
 
 def main():
-    # Model Config
+    # Model Config (matching reference WNO paper settings)
     batch_size = 8 # Reduced to avoid OOM
-    nx, ny, in_channels = 128, 128, 3 # (a, x, y)
+    nx, ny, in_channels = 128, 128, 1 # Raw input (a only)
     hidden_channels = 64
     n_layers = 4
     levels = 6
@@ -52,19 +59,13 @@ def main():
     lr = 1e-3
     rng = jax.random.PRNGKey(42)
 
-    # Pre-compute coordinate grids
-    x_grid = np.linspace(0, 1, nx)
-    y_grid = np.linspace(0, 1, ny)
-    X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
-    coords = np.stack([X, Y], axis=-1) # (nx, ny, 2)
-    coords = jnp.array(coords)
-
     model = WNO2D(
         hidden_channels=hidden_channels, 
         n_layers=n_layers, 
         levels=levels, 
         wavelet=wavelet, 
-        out_channels=out_channels
+        out_channels=out_channels,
+        use_grid=True
     )
     # Scheduler: Warmup + Cosine Decay
     num_batches = 5000
@@ -82,7 +83,7 @@ def main():
     state = create_train_state(rng, model, (batch_size, nx, ny, in_channels), tx=tx)
 
     # Dataset config - Using official Zenodo benchmark data (numpy format)
-    data_dir = 'scirex/data/datasets/darcy'
+    data_dir = 'scirex/data/datasets/darcy_fno'
     gen = darcy_zenodo.generator_from_numpy(
         root_dir=data_dir,
         resolution=nx,
@@ -111,9 +112,8 @@ def main():
         a_norm = a_normalizer.encode(jnp.asarray(a_np))
         u_norm = u_normalizer.encode(jnp.asarray(u_np))
         
-        # Concatenate coordinates: [a, x, y]
-        batch_coords = jnp.tile(coords[None, ...], (a_norm.shape[0], 1, 1, 1))
-        x_input = jnp.concatenate([a_norm, batch_coords], axis=-1)
+        # WNO2D now appends grid coordinates internally
+        x_input = a_norm
         
         batch = {"x": x_input, "y": u_norm}
         state, metrics = train_step(state, batch, mse)
@@ -141,13 +141,11 @@ def main():
     a_norm_test = a_normalizer.encode(jnp.asarray(a_test))
     u_norm_test = u_normalizer.encode(jnp.asarray(u_test))
     
-    batch_coords_test = jnp.tile(coords[None, ...], (a_norm_test.shape[0], 1, 1, 1))
-    x_input_test = jnp.concatenate([a_norm_test, batch_coords_test], axis=-1)
-    
+    x_input_test = a_norm_test
     
     # Run evaluation first!
     eval_batch = {"x": x_input_test, "y": u_norm_test}
-    final_metrics = eval_step(state, eval_batch, relative_l2_loss)
+    final_metrics = eval_step(state, eval_batch, lp_loss)
 
     # --- Detailed Metrics Calculation ---
     # 1. Decode predictions and ground truth to original scale
@@ -209,7 +207,7 @@ def main():
     
     with open(checkpoint_path, "wb") as f:
         pickle.dump(save_dict, f)
-    print(f"✅ Model and normalizers saved to {checkpoint_path}")
+    print(f"Model and normalizers saved to {checkpoint_path}")
 
 if __name__ == "__main__":
     main()

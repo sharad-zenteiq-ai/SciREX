@@ -22,7 +22,7 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-from typing import Any
+from typing import Any, Optional
 import jax
 import optax
 from flax.training import train_state
@@ -30,7 +30,14 @@ from flax.training import train_state
 # Alias for type hinting
 TrainState = train_state.TrainState
 
-def create_train_state(rng: Any, model: Any, input_shape: tuple, learning_rate: float, weight_decay: float = 1e-4) -> TrainState:
+def create_train_state(
+    rng: Any, 
+    model: Any, 
+    input_shape: tuple, 
+    learning_rate: Optional[float] = None, 
+    weight_decay: float = 1e-4,
+    tx: Optional[optax.GradientTransformation] = None
+) -> TrainState:
     """
     Initialize model params and optimizer state.
 
@@ -39,11 +46,17 @@ def create_train_state(rng: Any, model: Any, input_shape: tuple, learning_rate: 
     - input_shape: shape tuple for dummy input (batch, nx, ny, channels)
     - learning_rate: optimizer lr (can be float or optax schedule)
     - weight_decay: weight decay for AdamW
+    - tx: optional pre-built optax optimizer
     """
     dummy = jax.random.normal(rng, input_shape)
     variables = model.init(rng, dummy)
     params = variables["params"]
-    # Using AdamW which is standard for FNO training
-    tx = optax.adamw(learning_rate, weight_decay=weight_decay)
+    
+    if tx is None:
+        if learning_rate is None:
+            raise ValueError("Must provide either learning_rate or tx")
+        # Using AdamW which is standard for FNO training
+        tx = optax.adamw(learning_rate, weight_decay=weight_decay)
+        
     state = TrainState.create(apply_fn=model.apply, params=params, tx=tx)
     return state

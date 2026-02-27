@@ -52,7 +52,8 @@ def main():
         n_layers=n_layers, 
         levels=levels, 
         wavelet=wavelet, 
-        out_channels=out_channels
+        out_channels=out_channels,
+        use_grid=True
     )
     state = create_train_state(rng, model, (batch_size, nx, ny, in_channels), learning_rate=lr)
 
@@ -83,6 +84,7 @@ def main():
     axes[0, 0].set_title("True solution u")
     fig.colorbar(im0, ax=axes[0, 0])
     
+    im1 = axes[1, 1] if len(axes.flatten()) > 1 else None # dummy hack to avoid crash if axes is reshaped
     im1 = axes[0, 1].imshow(u_pred, origin='lower')
     axes[0, 1].set_title(f"WNO-{wavelet} prediction u_pred")
     fig.colorbar(im1, ax=axes[0, 1])

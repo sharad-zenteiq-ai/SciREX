@@ -28,7 +28,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from scirex.operators.models.wno2d import WNO2D
-from scirex.operators.layers import Lifting, Projection
 from scirex.training.train_state import create_train_state
 from scirex.training.step_fns import train_step, eval_step
 from scirex.losses.data_losses import mse
@@ -50,7 +49,8 @@ def main():
         n_layers=n_layers, 
         levels=levels, 
         wavelet=wavelet, 
-        out_channels=out_channels
+        out_channels=out_channels,
+        use_grid=True
     )
     state = create_train_state(rng, model, (batch_size, nx, ny, in_channels), learning_rate=lr)
 

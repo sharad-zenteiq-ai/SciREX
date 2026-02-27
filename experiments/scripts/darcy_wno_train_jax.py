@@ -40,12 +40,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import time
 import matplotlib.pyplot as plt
 from flax.training import train_state
 
-# Import existing WNO model from the repository
 from scirex.operators.models.wno2d import WNO2D
-from scirex.operators.layers import Lifting, Projection
 from scirex.data.datasets import darcy_zenodo
 from scirex.training.normalizers import GaussianNormalizer
 from scirex.data.datasets.darcy import generator as darcy_generator
@@ -65,15 +64,15 @@ class Config:
     n_layers = 4
     levels = 4
     wavelet = "db4"
-    projection_hidden_dim = 192  # From paper: fc1(width, 192) -> GeLU -> fc2(192, 1)
+    in_channel = 1  # a(x,y)
     
     # Training
-    batch_size = 20  # Paper setting
-    epochs = 100    # Paper setting
+    batch_size = 20  
+    epochs = 500    
     lr = 1e-3
     weight_decay = 1e-4
-    gamma = 0.75      # Paper StepLR decay rate
-    step_size = 50    # Paper StepLR step size (epochs)
+    gamma = 0.75      
+    step_size = 50    
     seed = 42
     
     # Paths
@@ -85,7 +84,7 @@ class Config:
 # --- Loss Function ---
 
 def relative_l2_loss(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
-    """Relative L2 loss (LpLoss in paper)."""
+    """Relative L2 loss"""
     # Flatten spatial dimensions: (Batch, N)
     pred_flat = pred.reshape(pred.shape[0], -1)
     target_flat = target.reshape(target.shape[0], -1)
@@ -106,7 +105,6 @@ def create_train_state(rng, model, config, input_shape, u_normalizer):
     variables = model.init(rng, jnp.ones(input_shape))
     params = variables['params']
     
-    # Paper uses StepLR: Decays by gamma every step_size epochs
     num_train_batches = config.n_train // config.batch_size
     steps_per_epoch = num_train_batches
     
@@ -178,50 +176,38 @@ def main():
         n_test=Config.n_test
     )
     
-    # Grid coordinates [a, x, y]
-    x_grid = np.linspace(0, 1, Config.res)
-    y_grid = np.linspace(0, 1, Config.res)
-    X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
-    grid = np.stack([X, Y], axis=-1)
-    
-    def append_grid(a):
-        grid_batch = np.tile(grid[None, ...], (a.shape[0], 1, 1, 1))
-        return np.concatenate([a, grid_batch], axis=-1)
-    
-    a_train_ext = append_grid(a_train_raw)
-    a_test_ext = append_grid(a_test_raw)
-    
     # 3. Normalization (Paper: Normalizes input and output)
     print("Computing normalization statistics...")
-    a_normalizer = GaussianNormalizer(a_train_ext)
-    u_normalizer = GaussianNormalizer(u_train_raw) # Needed for decoding in loss
+    a_normalizer = GaussianNormalizer(a_train_raw)
+    u_normalizer = GaussianNormalizer(u_train_raw)
     
-    a_train_norm = a_normalizer.encode(jnp.asarray(a_train_ext))
+    a_train_norm = a_normalizer.encode(jnp.asarray(a_train_raw))
     u_train_norm = u_normalizer.encode(jnp.asarray(u_train_raw))
-    a_test_norm = a_normalizer.encode(jnp.asarray(a_test_ext))
+    a_test_norm = a_normalizer.encode(jnp.asarray(a_test_raw))
     u_test_norm = u_normalizer.encode(jnp.asarray(u_test_raw))
     
-    # 4. Initialize Model
+    # 4. Initialize Model (reference-aligned architecture)
     model = WNO2D(
         hidden_channels=Config.hidden_channels,
         n_layers=Config.n_layers,
         levels=Config.levels,
         wavelet=Config.wavelet,
         out_channels=1,
-        projection_hidden_dim=Config.projection_hidden_dim
+        use_grid=True
     )
     
-    input_shape = (Config.batch_size, Config.res, Config.res, 3)
+    input_shape = (Config.batch_size, Config.res, Config.res, 1)  # Raw input: a(x,y) only
     train_key, init_key = jax.random.split(main_key)
     state = create_train_state(init_key, model, Config, input_shape, u_normalizer)
     
     # 6. Training Loop
     print(f"Starting training for {Config.epochs} epochs (Paper settings)...")
+    
+    initial_time = time.time()
+    
     best_loss = float('inf')
     history_train = []
     history_test = []
-    
-    num_train_batches = Config.n_train // Config.batch_size
     
     for epoch in range(1, Config.epochs + 1):
         indices = np.random.permutation(Config.n_train)
@@ -270,8 +256,7 @@ def main():
                     'hidden_channels': Config.hidden_channels,
                     'n_layers': Config.n_layers,
                     'levels': Config.levels,
-                    'wavelet': Config.wavelet,
-                    'projection_hidden_dim': Config.projection_hidden_dim
+                    'wavelet': Config.wavelet
                 }
             }
             save_path = Path(Config.checkpoint_dir)
@@ -279,7 +264,7 @@ def main():
             with open(save_path / Config.checkpoint_filename, "wb") as f:
                 pickle.dump(checkpoint, f)
 
-    print(f"✅ Training Complete. Best Test RelL2: {best_loss:.4f}")
+    print(f"Training Complete. Best Test RelL2: {best_loss:.4f}")
 
     # Plot and Save
     results_dir = Path("experiments/results")

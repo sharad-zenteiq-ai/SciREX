@@ -46,19 +46,22 @@ def main():
     checkpoint_path = checkpoint_dir / "darcy_wno_jax_best.pkl"
     
     if not checkpoint_path.exists():
-        print(f"❌ Checkpoint not found at {checkpoint_path}. Please run training first.")
-        return
+        print(f"Checkpoint not found at {checkpoint_path}. Please run training first.")
+        # Try paper best if jax_best is missing
+        checkpoint_path = checkpoint_dir / "darcy_wno_paper_best.pkl"
+        if not checkpoint_path.exists():
+            return
 
     print(f"Loading checkpoint from {checkpoint_path}...")
     with open(checkpoint_path, "rb") as f:
         checkpoint = pickle.load(f)
     
     params = checkpoint['params']
-    a_norm = checkpoint['a_norm']
-    u_norm = checkpoint['u_norm']
+    a_norm = checkpoint.get('a_norm') or checkpoint.get('a_normalizer')
+    u_norm = checkpoint.get('u_norm') or checkpoint.get('u_normalizer')
     config = checkpoint['config']
     
-    res = config['res']
+    res = config.get('res') or config.get('nx')
     
     # 2. Load and Prepare Test Data
     print(f"Loading Darcy test data (res={res})...")
@@ -69,34 +72,23 @@ def main():
         n_test=100
     )
     
-    # Coordinates
-    x_grid = np.linspace(0, 1, res)
-    y_grid = np.linspace(0, 1, res)
-    X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
-    grid = np.stack([X, Y], axis=-1)
-    
-    def append_grid(a):
-        grid_batch = np.tile(grid[None, ...], (a.shape[0], 1, 1, 1))
-        return np.concatenate([a, grid_batch], axis=-1)
-    
-    a_test_input = append_grid(a_test)
-    
     # 3. Model Inference
     print("Running model inference...")
     model = WNO2D(
-        hidden_channels=config['hidden_channels'],
-        n_layers=config['n_layers'],
-        levels=config['levels'],
-        wavelet=config['wavelet'],
+        hidden_channels=config.get('hidden_channels', 64),
+        n_layers=config.get('n_layers', 4),
+        levels=config.get('levels', 4),
+        wavelet=config.get('wavelet', 'db4'),
         out_channels=1,
-        projection_hidden_dim=config.get('projection_hidden_dim', None)
+        projection_hidden_dim=config.get('projection_hidden_dim', None),
+        use_grid=True
     )
     
     # Pick a random sample from test set
     idx = np.random.randint(0, a_test.shape[0])
     # idx = 0 # Use first if preferred
     
-    sample_a = a_test_input[idx:idx+1]
+    sample_a = a_test[idx:idx+1]
     sample_u = u_test[idx]
     
     # Encode input

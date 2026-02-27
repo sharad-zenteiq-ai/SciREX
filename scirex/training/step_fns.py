@@ -23,10 +23,11 @@
 # please contact: contact@scirex.org
 
 from typing import Callable, Dict, Tuple
+from functools import partial
 import jax
 from flax.training.train_state import TrainState
 
-@jax.jit(static_argnames=("loss_fn",))
+@partial(jax.jit, static_argnames=("loss_fn",))
 def train_step(state: TrainState, batch: Dict, loss_fn: Callable) -> Tuple[TrainState, Dict]:
     """
     Single train step.
@@ -45,7 +46,7 @@ def train_step(state: TrainState, batch: Dict, loss_fn: Callable) -> Tuple[Train
     return state, metrics
 
 
-@jax.jit(static_argnames=("loss_fn",))
+@partial(jax.jit, static_argnames=("loss_fn",))
 def eval_step(state: TrainState, batch: Dict, loss_fn: Callable) -> Dict:
     """
     Forward evaluation step.

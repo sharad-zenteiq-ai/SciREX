@@ -1,5 +1,3 @@
-from .fno2d import FNO2D
-from .fno3d import FNO3D
 from .wno1d import WNO1D
 from .wno2d import WNO2D
 from .fwno2d import FWNO2D

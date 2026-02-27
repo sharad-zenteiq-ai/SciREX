@@ -59,30 +59,25 @@ def main():
     levels = config["levels"]
     wavelet = config["wavelet"]
     
-    print(f"✅ Loaded model: {wavelet} hidden_channels={hidden_channels} n_layers={n_layers} levels={levels} res={nx}x{ny}")
+    print(f"Loaded model: {wavelet} hidden_channels={hidden_channels} n_layers={n_layers} levels={levels} res={nx}x{ny}")
 
-    # 2. Initialize Model and State
+    # 2. Initialize Model and State (WNO2D now appends grid internally)
     model = WNO2D(
         hidden_channels=hidden_channels, 
         n_layers=n_layers, 
         levels=levels, 
         wavelet=wavelet, 
-        out_channels=1
+        out_channels=1,
+        use_grid=True
     )
     
-    # Dummy init to create state structure
+    # Dummy init to create state structure (in_ch=1: raw input)
     rng = jax.random.PRNGKey(0)
-    state = create_train_state(rng, model, (1, nx, ny, 3), learning_rate=1e-3)
+    state = create_train_state(rng, model, (1, nx, ny, 1), learning_rate=1e-3)
     # Replace params with loaded ones
     state = state.replace(params=params)
 
-    # 3. Pre-compute coordinate grids
-    x_grid = np.linspace(0, 1, nx)
-    y_grid = np.linspace(0, 1, ny)
-    X, Y = np.meshgrid(x_grid, y_grid, indexing='ij')
-    coords = jnp.array(np.stack([X, Y], axis=-1)) # (nx, ny, 2)
-
-    # 4. Load Test Data
+    # 3. Load Test Data
     data_dir = 'scirex/data/datasets/darcy'
     _, _, a_test_all, u_test_all = darcy_zenodo.load_darcy_numpy(
         root_dir=data_dir,
@@ -95,13 +90,12 @@ def main():
     idx = 0 # Can change to np.random.randint(len(a_test_all))
     a_test = a_test_all[idx:idx+1]
     u_test = u_test_all[idx:idx+1]
-    
-    # 5. Inference
+
+    # 5. Inference (WNO2D appends grid internally)
     a_norm_test = a_normalizer.encode(jnp.asarray(a_test))
     u_norm_test = u_normalizer.encode(jnp.asarray(u_test))
     
-    batch_coords_test = jnp.tile(coords[None, ...], (1, 1, 1, 1))
-    x_input_test = jnp.concatenate([a_norm_test, batch_coords_test], axis=-1)
+    x_input_test = a_norm_test
     
     eval_batch = {"x": x_input_test, "y": u_norm_test}
     out = eval_step(state, eval_batch, mse)

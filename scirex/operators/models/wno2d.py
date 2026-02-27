@@ -25,9 +25,10 @@
 from typing import Optional, Callable
 from flax import linen as nn
 import jax.numpy as jnp
-from ..layers.lifting import Lifting
-from ..layers.projection import Projection
-from ..blocks.wavelet_block import WaveletBlock2D
+from ..layers.channel_mlp import ChannelMLP
+from ..layers.embeddings import GridEmbedding
+from ..layers.padding import DomainPadding
+from ..layers.wavelet_block import WaveletBlock2D
 
 class WNO2D(nn.Module):
     """
@@ -41,6 +42,8 @@ class WNO2D(nn.Module):
     out_channels: int = 1
     activation: Callable = nn.gelu
     projection_hidden_dim: Optional[int] = None
+    use_grid: bool = True
+    padding: float = 0.0
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -48,8 +51,19 @@ class WNO2D(nn.Module):
         x: (batch, nx, ny, in_channels)
         returns: (batch, nx, ny, out_channels)
         """
-        # 1. Lifting
-        x = Lifting(hidden_channels=self.hidden_channels)(x)
+        original_shape = x.shape
+        
+        # 0. Grid Embedding
+        if self.use_grid:
+            x = GridEmbedding(grid_boundaries=((0.0, 1.0), (0.0, 1.0)))(x)
+            
+        # 1. Domain Padding
+        if self.padding > 0:
+            pad_layer = DomainPadding(padding=self.padding)
+            x = pad_layer(x)
+
+        # 2. Lifting: encoder MLP -> project to hidden_channels
+        x = ChannelMLP(out_channels=self.hidden_channels, n_layers=1)(x)
         
         # 2. Wavelet Blocks
         for i in range(self.n_layers):
@@ -66,9 +80,15 @@ class WNO2D(nn.Module):
             
         # 3. Projection
         # Paper uses 2nd hidden dim in projection (e.g., width -> 192 -> 1)
-        x = Projection(
+        x = ChannelMLP(
             out_channels=self.out_channels,
-            hidden_dim=self.projection_hidden_dim,
+            hidden_channels=self.projection_hidden_dim,
+            n_layers=2,
             activation=self.activation
         )(x)
+        
+        # 4. Inverse Domain Padding (Crop)
+        if self.padding > 0:
+            x = pad_layer(x, inverse=True, original_shape=original_shape)
+            
         return x

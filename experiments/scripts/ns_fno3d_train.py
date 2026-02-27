@@ -32,7 +32,7 @@ import numpy as np
 import optax
 from flax.training import train_state
 
-from scirex.operators.fno.models import FNO3D
+from scirex.operators.models import FNO3D
 from scirex.training.normalizers import GaussianNormalizer
 
 # ==============================================================================
@@ -247,11 +247,9 @@ def main():
     
     # 3. Model
     model = FNO3D(
-        width=config.width,
-        depth=config.depth,
-        modes_x=config.modes_x,
-        modes_y=config.modes_y,
-        modes_z=config.modes_z,
+        hidden_channels=config.width,
+        n_layers=config.depth,
+        n_modes=(config.modes_x, config.modes_y, config.modes_z),
         out_channels=1
     )
     
