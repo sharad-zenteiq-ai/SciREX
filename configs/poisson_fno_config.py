@@ -39,7 +39,7 @@ Usage
 
 from dataclasses import dataclass, field
 from typing import Literal
-from configs.models import FNO_Medium2D, FNO_Medium3D
+from configs.models import FNO_Medium2D, FNO_Medium3D, FNO_Large2D
 
 
 @dataclass
@@ -53,8 +53,10 @@ class FNO2DConfig:
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     batch_size: int = 32
-    epochs: int = 501
-    steps_per_epoch: int = 100
+    epochs: int = 1000
+    steps_per_epoch: int = 50
+    n_test: int = 200
+    n_train: int = 2000
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"

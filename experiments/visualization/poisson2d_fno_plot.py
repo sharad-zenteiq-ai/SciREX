@@ -39,6 +39,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import flax
+from flax import linen as nn
 import json
 
 from scirex.operators.models.fno2d import FNO2D
@@ -46,39 +47,55 @@ from scirex.training.train_state import create_train_state
 from scirex.data.datasets.poisson import generator as poisson_generator
 from configs.poisson_fno_config import FNO2DConfig
 
+class UnitGaussianNormalizer:
+    def __init__(self, x, eps=1e-5):
+        self.mean = jnp.mean(x, axis=(0, 1, 2), keepdims=True)
+        self.std = jnp.std(x, axis=(0, 1, 2), keepdims=True)
+        self.eps = eps
+
+    def encode(self, x):
+        return (x - self.mean) / (self.std + self.eps)
+
+    def decode(self, x):
+        return x * (self.std + self.eps) + self.mean
+
 def main():
     # 1. Load Configuration
     config = FNO2DConfig()
     
-    # 2. Initialize Model (Same architecture as training)
+    # 2. Initialize Model (Consistent with training preset)
     print(f"Initializing FNO2D model...")
     model = FNO2D(
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 
-        out_channels=config.out_channels
+        out_channels=config.out_channels,
+        lifting_channel_ratio=config.lifting_channel_ratio,
+        projection_channel_ratio=config.projection_channel_ratio,
+        use_grid=config.use_grid,
+        fno_skip=config.fno_skip,
+        channel_mlp_skip=config.channel_mlp_skip,
+        use_channel_mlp=config.use_channel_mlp,
+        padding=config.domain_padding,
+        activation=nn.gelu
     )
     
     # 3. Load Checkpoint
     ckpt_path = os.path.join(project_root, "experiments/checkpoints/poisson_fno_params.pkl")
     if not os.path.exists(ckpt_path):
         print(f"Error: Checkpoint not found at {ckpt_path}")
-        print("Please run experiments/scripts/poisson_fno_train.py first.")
         return
 
     print(f"Loading checkpoint from {ckpt_path}...")
     
-    # Create dummy state to initialize structure
     nx, ny = config.resolution
     dummy_input = jnp.ones((1, nx, ny, config.in_channels))
     variables = model.init(jax.random.PRNGKey(0), dummy_input)
     init_params = variables["params"]
     
-    # Load bytes and restore
     with open(ckpt_path, "rb") as f:
         ckpt_bytes = f.read()
     
-    # Use flax serialization to restore params
     try:
         loaded_params = flax.serialization.from_bytes(init_params, ckpt_bytes)
         print("Successfully loaded parameters.")
@@ -86,115 +103,73 @@ def main():
         print(f"Failed to load parameters: {e}")
         return
 
-    # 4. Generate Test Data
-    print("Generating validation batch...")
-    # Use a specific seed to see new unseen data
-    # Note: poisson_generator yields (f, u) batches
-    nx, ny = config.resolution
-    gen = poisson_generator(
-        num_batches=1, 
-        batch_size=8, # visualize enough examples
-        nx=nx, 
-        ny=ny, 
-        channels=config.in_channels, 
-        rng_seed=12345 
-    )
+    # 4. Generate Data and Recreate Normalizers
+    print("Generating validation batch and fitting normalizers...")
+    from scirex.data.datasets.poisson import random_poisson_batch
     
-    f_test, u_test = next(gen)
+    # Re-generate train sample (same seed as training) to get correct scales
+    f_train_ref, u_train_ref = random_poisson_batch(
+        batch_size=100, nx=nx, ny=ny, channels=1, rng_seed=config.seed
+    )
+    x_normalizer = UnitGaussianNormalizer(f_train_ref)
+    y_normalizer = UnitGaussianNormalizer(u_train_ref)
+
+    # Generate Test Data (different seed)
+    f_test, u_test = random_poisson_batch(
+        batch_size=8, nx=nx, ny=ny, channels=1, rng_seed=12345
+    )
     
     # 5. Inference
     print("Running inference...")
-    u_pred = model.apply({"params": loaded_params}, jnp.asarray(f_test))
+    f_test_encoded = x_normalizer.encode(jnp.asarray(f_test))
+    u_pred_encoded = model.apply({"params": loaded_params}, f_test_encoded)
+    u_pred = y_normalizer.decode(u_pred_encoded)
     
-    # 6. Plotting Predictions
-    # Ensure plot directory exists
+    # 6. Plotting Field Comparisons (Only 2D Squares)
     plot_dir = os.path.join(project_root, "experiments/results/poisson")
-    if not os.path.exists(plot_dir):
-        os.makedirs(plot_dir)
+    os.makedirs(plot_dir, exist_ok=True)
     
     num_plots = min(3, f_test.shape[0])
     fig, axes = plt.subplots(num_plots, 4, figsize=(16, 4 * num_plots))
-    # Columns: Input (f), Ground Truth (u), Prediction (u_hat), Error |u - u_hat|
     
     for i in range(num_plots):
-        # Input f
-        if num_plots > 1:
-            ax_row = axes[i]
-        else:
-            ax_row = axes
+        ax_row = axes[i] if num_plots > 1 else axes
             
+        # Input f
         ax = ax_row[0]
         im = ax.imshow(f_test[i, ..., 0], cmap="viridis")
-        ax.set_title(f"Input f (Sample {i})")
+        ax.set_title(f"Source Term f")
         fig.colorbar(im, ax=ax)
         ax.axis('off')
         
         # Ground Truth u
         ax = ax_row[1]
         im = ax.imshow(u_test[i, ..., 0], cmap="inferno")
-        ax.set_title("Ground Truth u")
+        ax.set_title("True Solution u")
         fig.colorbar(im, ax=ax)
         ax.axis('off')
         
         # Prediction u_pred
         ax = ax_row[2]
         im = ax.imshow(u_pred[i, ..., 0], cmap="inferno")
-        ax.set_title("Prediction u_pred")
+        ax.set_title("FNO Prediction")
         fig.colorbar(im, ax=ax)
         ax.axis('off')
         
         # Error
         ax = ax_row[3]
         err = np.abs(u_test[i, ..., 0] - u_pred[i, ..., 0])
-        max_err = np.max(err)
+        rel_err = np.linalg.norm(err) / np.linalg.norm(u_test[i, ..., 0])
         im = ax.imshow(err, cmap="magma")
-        ax.set_title(f"Abs Error (Max: {max_err:.4e})")
+        ax.set_title(f"Error (Rel: {rel_err:.2%})")
         fig.colorbar(im, ax=ax)
         ax.axis('off')
 
     plt.tight_layout()
-    save_path = os.path.join(plot_dir, "poisson_fno_results.png")
+    save_path = os.path.join(plot_dir, "poisson_fno_comparison.png")
     plt.savefig(save_path, dpi=150)
-    print(f"Prediction plots saved to {save_path}")
-
-    # 7. Plot Loss Curves (if available)
-    metrics_path = os.path.join(plot_dir, "fno2d_metrics.json")
-    if os.path.exists(metrics_path):
-        print(f"Loading training metrics from {metrics_path}...")
-        with open(metrics_path, "r") as f:
-            history = json.load(f)
-        
-        epochs_range = range(len(history["train_mse"]))
-        plt.figure(figsize=(12, 5))
-        
-        # Plot MSE
-        plt.subplot(1, 2, 1)
-        plt.semilogy(epochs_range, history["train_mse"], label='Train MSE')
-        if "test_mse" in history:
-            plt.semilogy(epochs_range, history["test_mse"], label='Test MSE', linestyle='--')
-        plt.xlabel('Epoch')
-        plt.ylabel('MSE')
-        plt.title('Loss (MSE)')
-        plt.grid(True, which="both", ls="-", alpha=0.5)
-        plt.legend()
-        
-        # Plot Rel L2
-        plt.subplot(1, 2, 2)
-        if "train_rel_l2" in history:
-            plt.semilogy(epochs_range, history["train_rel_l2"], label='Train Rel L2')
-        plt.semilogy(epochs_range, history["test_rel_l2"], label='Test Rel L2', color='orange', linestyle='--')
-        plt.xlabel('Epoch')
-        plt.ylabel('Relative L2 Error')
-        plt.title('Accuracy (Rel L2)')
-        plt.grid(True, which="both", ls="-", alpha=0.5)
-        plt.legend()
-        
-        plt.tight_layout()
-        loss_plot_path = os.path.join(plot_dir, "poisson_fno_losses.png")
-        plt.savefig(loss_plot_path, dpi=150)
-        print(f"Loss curves saved to: {loss_plot_path}")
-    else:
-        print(f"Warning: Metrics file not found at {metrics_path}. Skipping loss plots.")
+    print(f"Comparison plots saved to {save_path}")
+    print("Loss plotting skipped as requested.")
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,54 @@
+Initializing FNO2D (hidden_channels=64, modes=(16, 16))...
+Generating 3200 training samples and 32 test samples...
+Data shapes: f_train=(3200, 64, 64, 3), u_train=(3200, 64, 64, 1)
+Data stats: f std=1.0000, u std=0.9993
+Starting training for 501 epochs (50100 steps)...
+Epoch    0 | Train MSE: 1.441410e-01 | Test MSE: 2.057298e-05 | Test Rel L2: 0.317489 | Best Rel L2: 0.317489 | LR: 1.00e-03 | Time: 10.44s
+Epoch   10 | Train MSE: 1.588692e-01 | Test MSE: 5.352059e-05 | Test Rel L2: 0.511507 | Best Rel L2: 0.265595 | LR: 9.99e-04 | Time: 0.69s
+Epoch   20 | Train MSE: 2.070548e-01 | Test MSE: 4.155200e-05 | Test Rel L2: 0.452992 | Best Rel L2: 0.265595 | LR: 9.96e-04 | Time: 0.69s
+Epoch   30 | Train MSE: 2.840447e-01 | Test MSE: 2.221463e-05 | Test Rel L2: 0.332651 | Best Rel L2: 0.242546 | LR: 9.91e-04 | Time: 0.69s
+Epoch   40 | Train MSE: 4.659503e-02 | Test MSE: 2.628725e-05 | Test Rel L2: 0.349713 | Best Rel L2: 0.183034 | LR: 9.84e-04 | Time: 0.70s
+Epoch   50 | Train MSE: 2.968312e-01 | Test MSE: 5.769821e-05 | Test Rel L2: 0.534954 | Best Rel L2: 0.183034 | LR: 9.75e-04 | Time: 0.69s
+Epoch   60 | Train MSE: 3.306318e-01 | Test MSE: 5.704303e-05 | Test Rel L2: 0.528202 | Best Rel L2: 0.183034 | LR: 9.64e-04 | Time: 0.70s
+Epoch   70 | Train MSE: 2.348309e-01 | Test MSE: 3.198025e-05 | Test Rel L2: 0.398227 | Best Rel L2: 0.183034 | LR: 9.51e-04 | Time: 0.70s
+Epoch   80 | Train MSE: 1.455039e-01 | Test MSE: 3.310553e-05 | Test Rel L2: 0.400958 | Best Rel L2: 0.183034 | LR: 9.37e-04 | Time: 0.70s
+Epoch   90 | Train MSE: 3.918697e-01 | Test MSE: 2.279890e-04 | Test Rel L2: 0.999492 | Best Rel L2: 0.183034 | LR: 9.21e-04 | Time: 0.70s
+Epoch  100 | Train MSE: 3.451446e-01 | Test MSE: 7.565884e-05 | Test Rel L2: 0.601752 | Best Rel L2: 0.183034 | LR: 9.03e-04 | Time: 0.71s
+Epoch  110 | Train MSE: 4.096540e-01 | Test MSE: 8.165459e-05 | Test Rel L2: 0.635350 | Best Rel L2: 0.183034 | LR: 8.84e-04 | Time: 0.72s
+Epoch  120 | Train MSE: 3.410793e-01 | Test MSE: 8.463184e-05 | Test Rel L2: 0.643408 | Best Rel L2: 0.183034 | LR: 8.63e-04 | Time: 0.71s
+Epoch  130 | Train MSE: 6.026189e-01 | Test MSE: 1.419162e-04 | Test Rel L2: 0.805917 | Best Rel L2: 0.183034 | LR: 8.41e-04 | Time: 0.71s
+Epoch  140 | Train MSE: 4.666804e-01 | Test MSE: 8.657519e-05 | Test Rel L2: 0.620220 | Best Rel L2: 0.183034 | LR: 8.17e-04 | Time: 0.71s
+Epoch  150 | Train MSE: 8.170754e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 7.92e-04 | Time: 0.70s
+Epoch  160 | Train MSE: 9.986894e-01 | Test MSE: 2.281662e-04 | Test Rel L2: 1.000002 | Best Rel L2: 0.183034 | LR: 7.66e-04 | Time: 0.69s
+Epoch  170 | Train MSE: 9.987420e-01 | Test MSE: 2.282005e-04 | Test Rel L2: 1.000091 | Best Rel L2: 0.183034 | LR: 7.39e-04 | Time: 0.70s
+Epoch  180 | Train MSE: 9.988420e-01 | Test MSE: 2.281685e-04 | Test Rel L2: 1.000008 | Best Rel L2: 0.183034 | LR: 7.11e-04 | Time: 0.70s
+Epoch  190 | Train MSE: 9.988064e-01 | Test MSE: 2.282442e-04 | Test Rel L2: 1.000205 | Best Rel L2: 0.183034 | LR: 6.82e-04 | Time: 0.70s
+Epoch  200 | Train MSE: 9.988636e-01 | Test MSE: 2.282655e-04 | Test Rel L2: 1.000261 | Best Rel L2: 0.183034 | LR: 6.53e-04 | Time: 0.69s
+Epoch  210 | Train MSE: 9.988767e-01 | Test MSE: 2.281778e-04 | Test Rel L2: 1.000032 | Best Rel L2: 0.183034 | LR: 6.23e-04 | Time: 0.70s
+Epoch  220 | Train MSE: 9.987791e-01 | Test MSE: 2.282033e-04 | Test Rel L2: 1.000098 | Best Rel L2: 0.183034 | LR: 5.92e-04 | Time: 0.70s
+Epoch  230 | Train MSE: 9.987045e-01 | Test MSE: 2.281667e-04 | Test Rel L2: 1.000003 | Best Rel L2: 0.183034 | LR: 5.61e-04 | Time: 0.70s
+Epoch  240 | Train MSE: 9.987364e-01 | Test MSE: 2.281667e-04 | Test Rel L2: 1.000003 | Best Rel L2: 0.183034 | LR: 5.30e-04 | Time: 0.70s
+Epoch  250 | Train MSE: 9.986922e-01 | Test MSE: 2.281743e-04 | Test Rel L2: 1.000023 | Best Rel L2: 0.183034 | LR: 4.98e-04 | Time: 0.70s
+Epoch  260 | Train MSE: 9.986930e-01 | Test MSE: 2.281662e-04 | Test Rel L2: 1.000002 | Best Rel L2: 0.183034 | LR: 4.67e-04 | Time: 0.70s
+Epoch  270 | Train MSE: 9.986886e-01 | Test MSE: 2.281658e-04 | Test Rel L2: 1.000001 | Best Rel L2: 0.183034 | LR: 4.36e-04 | Time: 0.69s
+Epoch  280 | Train MSE: 9.986846e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 4.05e-04 | Time: 0.69s
+Epoch  290 | Train MSE: 9.986808e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 3.74e-04 | Time: 0.70s
+Epoch  300 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 3.44e-04 | Time: 0.70s
+Epoch  310 | Train MSE: 9.986810e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 3.15e-04 | Time: 0.70s
+Epoch  320 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 2.86e-04 | Time: 0.71s
+Epoch  330 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 2.58e-04 | Time: 0.69s
+Epoch  340 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 2.31e-04 | Time: 0.70s
+Epoch  350 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 2.05e-04 | Time: 0.69s
+Epoch  360 | Train MSE: 9.986809e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 1.81e-04 | Time: 0.69s
+Epoch  370 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 1.57e-04 | Time: 0.70s
+Epoch  380 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 1.35e-04 | Time: 0.70s
+Epoch  390 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 1.14e-04 | Time: 0.69s
+Epoch  400 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 9.51e-05 | Time: 0.70s
+Epoch  410 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 7.75e-05 | Time: 0.70s
+Epoch  420 | Train MSE: 9.986808e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 6.16e-05 | Time: 0.70s
+Epoch  430 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 4.74e-05 | Time: 0.70s
+Epoch  440 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 3.50e-05 | Time: 0.70s
+Epoch  450 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 2.44e-05 | Time: 0.70s
+Epoch  460 | Train MSE: 9.986807e-01 | Test MSE: 2.281656e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 1.56e-05 | Time: 0.70s
+Epoch  470 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 8.82e-06 | Time: 0.69s
+Epoch  480 | Train MSE: 9.986807e-01 | Test MSE: 2.281655e-04 | Test Rel L2: 1.000000 | Best Rel L2: 0.183034 | LR: 3.93e-06 | Time: 0.70s

@@ -114,7 +114,7 @@ class FNOConfig(ModelConfig):
     in_channels: int = 1
     out_channels: int = 1
     lifting_channel_ratio: int = 2
-    projection_channel_ratio: int = 2
+    projection_channel_ratio: int = 4
     use_grid: bool = True
     fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
     channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
@@ -168,13 +168,13 @@ class FNO_Medium2D(SimpleFNOConfig):
     The default workhorse for most 2D operator-learning tasks such
     as Poisson, Darcy, etc.
     """
-    n_modes: tuple = (16, 16)
-    hidden_channels: int = 64
+    n_modes: tuple = (24, 24)
+    hidden_channels: int = 128
     n_layers: int = 4
     in_channels: int = 3
     out_channels: int = 1
     use_grid: bool = False
-    use_norm: bool = False
+    use_norm: bool = True
 
 
 @dataclass
@@ -186,11 +186,12 @@ class FNO_Large2D(SimpleFNOConfig):
     or harder 2D problems.
     """
     n_modes: tuple = (32, 32)
-    hidden_channels: int = 128
+    hidden_channels: int = 256
     n_layers: int = 4
     in_channels: int = 3
     out_channels: int = 1
     use_grid: bool = False
+    use_norm: bool = True
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -34,7 +34,7 @@ class SpectralConv2D(nn.Module):
     in_channels: int
     out_channels: int
     n_modes: Tuple[int, int]
-    init_std: float = None # If None, uses (2 / (in + out))**0.5
+    init_std: float = None
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
@@ -48,9 +48,8 @@ class SpectralConv2D(nn.Module):
         # 2. Weights
         weights_shape = (in_channels, self.out_channels, modes_x, modes_y)
         
-        # Xavier/Glorot initialization scale (standard in original neuraloperator)
         if self.init_std is None:
-            scale = (2.0 / (in_channels + self.out_channels))**0.5
+            scale = 0.05
         else:
             scale = self.init_std
             
@@ -95,7 +94,7 @@ class SpectralConv3D(nn.Module):
         weights_shape = (in_channels, self.out_channels, modes_x, modes_y, modes_z)
         
         if self.init_std is None:
-            scale = (2.0 / (in_channels + self.out_channels))**0.5
+            scale = 0.05
         else:
             scale = self.init_std
             

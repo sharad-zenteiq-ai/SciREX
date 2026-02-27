@@ -50,23 +50,30 @@ from configs.poisson_fno_config import FNO2DConfig
 
 
 def make_schedule(config: FNO2DConfig):
-    """Create learning rate schedule based on config.scheduler_type.
+    """Create learning rate schedule with Linear Warmup and Cosine Decay."""
+    spe = getattr(config, "steps_per_epoch_actual", config.steps_per_epoch)
+    total_steps = config.epochs * spe
     
-    Supports:
-        - "step":   StepLR equivalent (piecewise constant decay)
-        - "cosine": Cosine annealing from lr → 0
-    """
-    total_steps = config.epochs * config.steps_per_epoch
+    # Neural operator best practice: linear warmup to prevent early divergence
+    warmup_steps = min(1000, total_steps // 10)
     
     if config.scheduler_type == "cosine":
-        schedule = optax.cosine_decay_schedule(
+        # Warmup from 0 up to learning_rate, then cosine decay
+        cosine_schedule = optax.cosine_decay_schedule(
             init_value=config.learning_rate,
-            decay_steps=total_steps,
-            alpha=0.0  # final lr = alpha * init_value
+            decay_steps=total_steps - warmup_steps,
+            alpha=0.0
+        )
+        schedule = optax.join_schedules(
+            schedules=[
+                optax.linear_schedule(0.0, config.learning_rate, warmup_steps),
+                cosine_schedule
+            ],
+            boundaries=[warmup_steps]
         )
     elif config.scheduler_type == "step":
         scales = {}
-        decay_steps = config.scheduler_step_size * config.steps_per_epoch
+        decay_steps = config.scheduler_step_size * spe
         num_decays = config.epochs // config.scheduler_step_size
         
         current_scale = 1.0
@@ -121,10 +128,18 @@ def main():
         activation=nn.gelu
     )
     
+    # Create checkpoint directory and results directory
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    
     # 3. Initialize Optimizer & Scheduler
+    # Override steps_per_epoch based on actual n_train if provided
+    n_train = getattr(config, "n_train", config.batch_size * config.steps_per_epoch)
+    steps_per_epoch = n_train // config.batch_size
+    setattr(config, "steps_per_epoch_actual", steps_per_epoch)
+    
     schedule = make_schedule(config)
     # Total steps verification
-    total_steps = config.epochs * config.steps_per_epoch
+    total_steps = config.epochs * steps_per_epoch
     
     # Create Train State
     # Shape: (batch, nx, ny, in_channels)
@@ -141,10 +156,10 @@ def main():
     # 4. Pre-generate FIXED training and test datasets
     # The original FNO paper uses fixed datasets (not infinite random streams).
     # A fixed dataset allows the model to learn fine-grained patterns.
-    nx, ny = config.resolution
-    n_train = config.batch_size * config.steps_per_epoch  # total training samples
+    # Prioritize config.n_train if it exists, otherwise fallback to batch_size * steps_per_epoch.
+    n_test = config.n_test  # should be 200
     
-    print(f"Generating {n_train} training samples and {config.batch_size} test samples...")
+    print(f"Generating {n_train} training samples and {n_test} test samples...")
     from scirex.data.datasets.poisson import random_poisson_batch
     
     # Generate all training data at once
@@ -153,7 +168,7 @@ def main():
     )
     # Generate test data
     f_test, u_test = random_poisson_batch(
-        batch_size=config.batch_size, nx=nx, ny=ny, channels=1, rng_seed=999
+        batch_size=n_test, nx=nx, ny=ny, channels=1, rng_seed=999
     )
     
     f_train = jnp.asarray(f_train)
@@ -188,16 +203,31 @@ def main():
     
     # Track metrics for plotting
     history = {
-        "train_mse": [],
         "train_rel_l2": [],
-        "test_mse": [],
         "test_rel_l2": []
     }
 
-    # 5. Training Loop
+    # 5. Training Step (Optimized for Gradient Stability)
+    @jax.jit
+    def train_step_lploss(state, batch):
+        def loss_fn(params):
+            # Optimizing for Relative L2 on the encoded scale 
+            # (where gradients are better conditioned O(1))
+            pred_encoded = state.apply_fn({"params": params}, batch["x"])
+            return lp_loss(pred_encoded, batch["y"])
+
+        grad_fn = jax.value_and_grad(loss_fn)
+        loss, grads = grad_fn(state.params)
+        state = state.apply_gradients(grads=grads)
+        return state, {"loss": loss}
+
     print(f"Starting training for {config.epochs} epochs ({total_steps} steps)...")
     rng_key = jax.random.PRNGKey(config.seed + 1)
     
+    # Final check of data shapes
+    print(f"Data shapes: f_train={f_train.shape}, u_train={u_train.shape}")
+    print(f"Test shapes: f_test={test_batch_encoded['x'].shape}, u_test={u_test.shape}")
+
     for epoch in range(config.epochs):
         epoch_start_time = time.time()
         epoch_loss = 0.0
@@ -208,38 +238,31 @@ def main():
         f_shuffled = f_train[perm]
         u_shuffled = u_train[perm]
         
-        for step in range(config.steps_per_epoch):
+        for step in range(steps_per_epoch):
             start_idx = step * config.batch_size
             end_idx = start_idx + config.batch_size
+            
             batch = {
                 "x": f_shuffled[start_idx:end_idx],
                 "y": u_shuffled[start_idx:end_idx]
             }
-            state, metrics = train_step(state, batch, mse)
+            
+            state, metrics = train_step_lploss(state, batch)
             epoch_loss += float(metrics["loss"])
             
         epoch_time = time.time() - epoch_start_time
-        avg_train_loss = epoch_loss / config.steps_per_epoch
+        avg_train_loss = epoch_loss / steps_per_epoch
         
-        # We need train_rel_l2, test_mse, test_rel_l2
-        # For efficiency, compute train_rel_l2 on the LAST training batch of the epoch
-        train_metrics_l2 = eval_step(state, batch, lp_loss)
-        avg_train_l2 = float(train_metrics_l2["loss"])
-
         # Evaluate on test set
-        # In neural operator, forward pass output is "encoded" y. We decode it to compare with original.
-        # So we run one forward pass manually and decode.
+        # Forward pass output is "encoded" y.
         test_pred_encoded = state.apply_fn({"params": state.params}, test_batch_encoded["x"])
         test_pred_decoded = y_normalizer.decode(test_pred_encoded)
         
         # Test metric on original scale
-        v_test_mse = float(mse(test_pred_decoded, u_test))
         v_test_l2 = float(lp_loss(test_pred_decoded, u_test))
 
         # Update history
-        history["train_mse"].append(avg_train_loss)
-        history["train_rel_l2"].append(avg_train_l2)
-        history["test_mse"].append(v_test_mse)
+        history["train_rel_l2"].append(avg_train_loss)
         history["test_rel_l2"].append(v_test_l2)
         
         test_rel_l2 = v_test_l2 # for checkpointing
@@ -255,8 +278,7 @@ def main():
         
         if epoch % 10 == 0 or epoch == config.epochs - 1:
             print(f"Epoch {epoch:4d} | "
-                  f"Train MSE: {avg_train_loss:.6e} | "
-                  f"Test MSE: {v_test_mse:.6e} | "
+                  f"Train Rel L2: {avg_train_loss:.6e} | "
                   f"Test Rel L2: {v_test_l2:.6f} | "
                   f"Best Rel L2: {best_rel_l2:.6f} | "
                   f"LR: {float(current_lr):.2e} | "
@@ -271,26 +293,15 @@ def main():
     print(f"Checkpoint saved to: {ckpt_path}")
 
     # 6. Plot Loss Curves
-    epochs_range = range(len(history["train_mse"]))
-    plt.figure(figsize=(12, 5))
-    
-    # Plot MSE
-    plt.subplot(1, 2, 1)
-    plt.semilogy(epochs_range, history["train_mse"], label='Train MSE')
-    plt.semilogy(epochs_range, history["test_mse"], label='Test MSE', linestyle='--')
-    plt.xlabel('Epoch')
-    plt.ylabel('MSE')
-    plt.title('Loss (MSE)')
-    plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.legend()
+    epochs_range = range(len(history["train_rel_l2"]))
+    plt.figure(figsize=(10, 6))
     
     # Plot Rel L2
-    plt.subplot(1, 2, 2)
     plt.semilogy(epochs_range, history["train_rel_l2"], label='Train Rel L2')
     plt.semilogy(epochs_range, history["test_rel_l2"], label='Test Rel L2', color='orange', linestyle='--')
     plt.xlabel('Epoch')
     plt.ylabel('Relative L2 Error')
-    plt.title('Accuracy (Rel L2)')
+    plt.title('FNO 2D Poisson: Relative L2 Error Convergence')
     plt.grid(True, which="both", ls="-", alpha=0.5)
     plt.legend()
     

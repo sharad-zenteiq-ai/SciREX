@@ -51,12 +51,13 @@ def create_train_state(
     dummy = jax.random.normal(rng, input_shape)
     variables = model.init(rng, dummy)
     params = variables["params"]
-    
     if tx is None:
         if learning_rate is None:
             raise ValueError("Must provide either learning_rate or tx")
-        # Using AdamW which is standard for FNO training
-        tx = optax.adamw(learning_rate, weight_decay=weight_decay)
-        
+        # Using AdamW with gradient clipping (standard for stable training)
+        tx = optax.chain(
+            optax.clip_by_global_norm(1.0),
+            optax.adamw(learning_rate, weight_decay=weight_decay)
+        )
     state = TrainState.create(apply_fn=model.apply, params=params, tx=tx)
     return state
