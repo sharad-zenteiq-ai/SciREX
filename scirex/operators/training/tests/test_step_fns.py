@@ -27,8 +27,8 @@ import jax.numpy as jnp
 import pytest
 
 from scirex.operators.models.fno import FNO2D
-from scirex.training.train_state import create_train_state
-from scirex.training.step_fns import train_step, eval_step
+from scirex.operators.training.train_state import create_train_state
+from scirex.operators.training.step_fns import train_step, eval_step
 
 
 @pytest.fixture

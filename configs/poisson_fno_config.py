@@ -53,14 +53,14 @@ class FNO2DConfig:
     learning_rate: float = 5e-3
     weight_decay: float = 1e-4
     batch_size: int = 32
-    epochs: int = 200
+    epochs: int = 500
     steps_per_epoch: int = 10
     n_test: int = 200
     n_train: int = 1000
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"
-    cosine_decay_epochs: int = 100  # Cosine LR reaches 0 at this epoch; extra epochs fine-tune at ~0 LR
+    cosine_decay_epochs: int = 500  # Cosine LR reaches 0 at this epoch
     scheduler_step_size: int = 100   # used only when scheduler_type="step"
     scheduler_gamma: float = 0.5     # used only when scheduler_type="step"
 
@@ -128,12 +128,15 @@ class FNO3DConfig:
     # ── Training Parameters ──
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
-    batch_size: int = 4
-    epochs: int = 101
-    steps_per_epoch: int = 50
+    batch_size: int = 10
+    epochs: int = 500
+    steps_per_epoch: int = 100
+    n_test: int = 20
+    n_train: int = 2000
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"
+    cosine_decay_epochs: int = 500
     scheduler_step_size: int = 30    # used only when scheduler_type="step"
     scheduler_gamma: float = 0.5     # used only when scheduler_type="step"
 

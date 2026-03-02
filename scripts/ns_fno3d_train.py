@@ -33,7 +33,7 @@ import optax
 from flax.training import train_state
 
 from scirex.operators.models import FNO3D
-from scirex.training.normalizers import GaussianNormalizer
+from scirex.operators.training import GaussianNormalizer
 
 # ==============================================================================
 # CONFIGURATION

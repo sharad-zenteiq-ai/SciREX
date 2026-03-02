@@ -22,9 +22,19 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-"""Train a Flax FNO to learn the Poisson solution operator in 3D (f -> u)."""
+"""
+3D Poisson Equation Solver Training Script using FNO and Relative L2 Loss.
+
+This script learns the mapping f -> u for the 3D Poisson equation -∇²u = f.
+It utilizes the FNO3D architecture and optimizes directly using the 
+Relative L2 loss (LpLoss with p=2) on normalized scales.
+"""
 import os
 import sys
+
+# ── Force deterministic GPU operations for reproducibility ──
+os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + " --xla_gpu_deterministic_ops=true"
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 # Ensure project root is in path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -43,30 +53,39 @@ import json
 
 from scirex.operators.models.fno import FNO3D
 from scirex.operators.training import create_train_state, TrainState
-from scirex.training.step_fns import train_step, eval_step
-from scirex.operators.losses import mse, lp_loss
-from scirex.operators.data import generator_3d as poisson3d_generator
+from scirex.operators.losses import lp_loss
+from scirex.operators.data import random_poisson_3d_batch
 from configs.poisson_fno_config import FNO3DConfig
 
-
 def make_schedule(config: FNO3DConfig):
-    """Create learning rate schedule based on config.scheduler_type.
+    """Create learning rate schedule with Linear Warmup and Cosine Decay."""
+    # steps_per_epoch for 3D is explicitly from config
+    spe = config.steps_per_epoch
+    total_steps = config.epochs * spe
     
-    Supports:
-        - "step":   StepLR equivalent (piecewise constant decay)
-        - "cosine": Cosine annealing from lr → 0
-    """
-    total_steps = config.epochs * config.steps_per_epoch
+    # Warmup for ~5 epochs or 250 steps max
+    warmup_steps = min(250, total_steps // 10)
     
     if config.scheduler_type == "cosine":
-        schedule = optax.cosine_decay_schedule(
+        # Consistently decay over the specified cosine_decay_epochs
+        cosine_decay_steps = config.cosine_decay_epochs * spe - warmup_steps
+        cosine_decay_steps = max(cosine_decay_steps, 1)
+        
+        cosine_schedule = optax.cosine_decay_schedule(
             init_value=config.learning_rate,
-            decay_steps=total_steps,
+            decay_steps=cosine_decay_steps,
             alpha=0.0
+        )
+        schedule = optax.join_schedules(
+            schedules=[
+                optax.linear_schedule(0.0, config.learning_rate, warmup_steps),
+                cosine_schedule
+            ],
+            boundaries=[warmup_steps]
         )
     elif config.scheduler_type == "step":
         scales = {}
-        decay_steps = config.scheduler_step_size * config.steps_per_epoch
+        decay_steps = config.scheduler_step_size * spe
         num_decays = config.epochs // config.scheduler_step_size
         
         current_scale = 1.0
@@ -83,6 +102,21 @@ def make_schedule(config: FNO3DConfig):
         raise ValueError(f"Unknown scheduler_type: {config.scheduler_type}")
     
     return schedule
+
+class UnitGaussianNormalizer:
+    """Normalizer for 3D spatial fields."""
+    def __init__(self, x, eps=1e-5):
+        # x shape: (batch, nx, ny, nz, channels)
+        # Normalize across batch and all spatial dimensions
+        self.mean = jnp.mean(x, axis=(0, 1, 2, 3), keepdims=True)
+        self.std = jnp.std(x, axis=(0, 1, 2, 3), keepdims=True)
+        self.eps = eps
+
+    def encode(self, x):
+        return (x - self.mean) / (self.std + self.eps)
+
+    def decode(self, x):
+        return x * (self.std + self.eps) + self.mean
 
 def main():
     # 1. Load Configuration
@@ -112,7 +146,8 @@ def main():
     
     # 3. Initialize Optimizer & Scheduler
     schedule = make_schedule(config)
-    total_steps = config.epochs * config.steps_per_epoch
+    steps_per_epoch = config.steps_per_epoch
+    total_steps = config.epochs * steps_per_epoch
     
     # Create Train State
     nx, ny, nz = config.resolution
@@ -125,79 +160,104 @@ def main():
         weight_decay=config.weight_decay
     )
     
-    # 4. Data Generators
-    nx, ny, nz = config.resolution
-    train_gen = poisson3d_generator(
-        num_batches=total_steps + 100,
-        batch_size=config.batch_size, 
-        nx=nx, 
-        ny=ny, 
-        nz=nz,
-        channels=1,
-        include_mesh=True,
-        rng_seed=config.seed
+    # 4. Pre-generate Fixed Datasets
+    n_train = config.n_train
+    n_test = config.n_test
+    
+    print(f"Generating {n_train} training samples and {n_test} test samples (3D)...")
+    
+    # Generate Training Data
+    f_train, u_train = random_poisson_3d_batch(
+        batch_size=n_train, nx=nx, ny=ny, nz=nz, channels=1, 
+        rng_seed=config.seed, include_mesh=True
+    )
+    # Generate Test Data
+    f_test, u_test = random_poisson_3d_batch(
+        batch_size=n_test, nx=nx, ny=ny, nz=nz, channels=1, 
+        rng_seed=999, include_mesh=True
     )
     
-    # Test set (fixed seed)
-    nx, ny, nz = config.resolution
-    f_test, u_test = next(poisson3d_generator(
-        num_batches=1,
-        batch_size=config.batch_size, 
-        nx=nx, 
-        ny=ny, 
-        nz=nz,
-        channels=1,
-        include_mesh=True,
-        rng_seed=999
-    ))
-    test_batch = {"x": jnp.asarray(f_test), "y": jnp.asarray(u_test)}
+    f_train = jnp.asarray(f_train)
+    u_train = jnp.asarray(u_train)
+    f_test = jnp.asarray(f_test)
+    u_test = jnp.asarray(u_test)
+    
+    # 5. Normalize Data
+    x_normalizer = UnitGaussianNormalizer(f_train)
+    y_normalizer = UnitGaussianNormalizer(u_train)
+    
+    f_train_encoded = x_normalizer.encode(f_train)
+    u_train_encoded = y_normalizer.encode(u_train)
+    f_test_encoded = x_normalizer.encode(f_test)
+    
+    test_batch_encoded = {"x": f_test_encoded, "y": y_normalizer.encode(u_test)}
+    
+    print(f"Data shapes: f_train={f_train.shape}, u_train={u_train.shape}")
     
     # Paths
     ckpt_dir = os.path.join(project_root, "experiments/checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_path = os.path.join(ckpt_dir, "poisson3d_fno_params.pkl")
+    ckpt_path = os.path.join(ckpt_dir, "poisson3d_fno_lploss_params.pkl")
 
-    results_dir = os.path.join(project_root, "experiments/results/poisson3d")
+    results_dir = os.path.join(project_root, "experiments/results/poisson3d_lploss")
     os.makedirs(results_dir, exist_ok=True)
 
     best_rel_l2 = float("inf")
     history = {
-        "train_mse": [],
         "train_rel_l2": [],
-        "test_mse": [],
         "test_rel_l2": []
     }
 
-    # 5. Training Loop
+    # 6. Training Step (Relative L2 on Encoded Scales)
+    @jax.jit
+    def train_step_lploss(state, batch):
+        def loss_fn(params):
+            pred_encoded = state.apply_fn({"params": params}, batch["x"])
+            return lp_loss(pred_encoded, batch["y"])
+
+        grad_fn = jax.value_and_grad(loss_fn)
+        loss, grads = grad_fn(state.params)
+        state = state.apply_gradients(grads=grads)
+        return state, {"loss": loss}
+
     print(f"Starting training for {config.epochs} epochs ({total_steps} steps)...")
+    rng_key = jax.random.PRNGKey(config.seed + 1)
     
     for epoch in range(config.epochs):
         epoch_start_time = time.time()
         epoch_loss = 0.0
         
-        for _ in range(config.steps_per_epoch):
-            f_np, u_np = next(train_gen)
-            batch = {"x": jnp.asarray(f_np), "y": jnp.asarray(u_np)}
-            state, metrics = train_step(state, batch, mse)
+        # Shuffle training data each epoch
+        rng_key, shuffle_key = jax.random.split(rng_key)
+        perm = jax.random.permutation(shuffle_key, n_train)
+        f_shuffled = f_train_encoded[perm]
+        u_shuffled = u_train_encoded[perm]
+        
+        for step in range(steps_per_epoch):
+            start_idx = step * config.batch_size
+            end_idx = start_idx + config.batch_size
+            
+            batch = {
+                "x": f_shuffled[start_idx:end_idx],
+                "y": u_shuffled[start_idx:end_idx]
+            }
+            
+            state, metrics = train_step_lploss(state, batch)
             epoch_loss += float(metrics["loss"])
             
         epoch_time = time.time() - epoch_start_time
-        avg_train_mse = epoch_loss / config.steps_per_epoch
+        avg_train_loss = epoch_loss / steps_per_epoch
         
-        # Performance monitoring
-        train_metrics_l2 = eval_step(state, batch, lp_loss)
-        avg_train_l2 = float(train_metrics_l2["loss"])
+        # Evaluate on test set (decode for final metric)
+        test_pred_encoded = state.apply_fn({"params": state.params}, test_batch_encoded["x"])
+        test_pred_decoded = y_normalizer.decode(test_pred_encoded)
+        
+        v_test_l2 = float(lp_loss(test_pred_decoded, u_test))
 
-        test_metrics_mse = eval_step(state, test_batch, mse)
-        test_metrics_l2 = eval_step(state, test_batch, lp_loss)
-        v_test_mse = float(test_metrics_mse["loss"])
-        v_test_l2 = float(test_metrics_l2["loss"])
-
-        history["train_mse"].append(avg_train_mse)
-        history["train_rel_l2"].append(avg_train_l2)
-        history["test_mse"].append(v_test_mse)
+        history["train_rel_l2"].append(avg_train_loss)
         history["test_rel_l2"].append(v_test_l2)
         
+        # Save best checkpoint
         if v_test_l2 < best_rel_l2:
             best_rel_l2 = v_test_l2
             with open(ckpt_path, "wb") as f:
@@ -205,10 +265,9 @@ def main():
         
         current_lr = schedule(state.step)
         
-        if epoch % 5 == 0 or epoch == config.epochs - 1:
+        if epoch % 10 == 0 or epoch == config.epochs - 1:
             print(f"Epoch {epoch:4d} | "
-                  f"Train MSE: {avg_train_mse:.6e} | "
-                  f"Test MSE: {v_test_mse:.6e} | "
+                  f"Train Rel L2: {avg_train_loss:.6e} | "
                   f"Test Rel L2: {v_test_l2:.6f} | "
                   f"Best Rel L2: {best_rel_l2:.6f} | "
                   f"LR: {float(current_lr):.2e} | "
@@ -221,30 +280,21 @@ def main():
     print(f"Best Test Relative L2 Error: {best_rel_l2:.6f}")
     print(f"Checkpoint saved to: {ckpt_path}")
 
-    # 6. Plot Loss Curves
-    epochs_range = range(len(history["train_mse"]))
-    plt.figure(figsize=(12, 5))
+    # 7. Plot Loss Curves
+    epochs_range = range(len(history["train_rel_l2"]))
+    plt.figure(figsize=(8, 8))
     
-    plt.subplot(1, 2, 1)
-    plt.semilogy(epochs_range, history["train_mse"], label='Train MSE')
-    plt.semilogy(epochs_range, history["test_mse"], label='Test MSE', linestyle='--')
-    plt.xlabel('Epoch')
-    plt.ylabel('MSE')
-    plt.title('3D Poisson Loss (MSE)')
-    plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.legend()
-    
-    plt.subplot(1, 2, 2)
     plt.semilogy(epochs_range, history["train_rel_l2"], label='Train Rel L2')
     plt.semilogy(epochs_range, history["test_rel_l2"], label='Test Rel L2', color='orange', linestyle='--')
     plt.xlabel('Epoch')
     plt.ylabel('Relative L2 Error')
-    plt.title('3D Poisson Accuracy (Rel L2)')
+    plt.title('3D Poisson FNO: Relative L2 Error Convergence')
     plt.grid(True, which="both", ls="-", alpha=0.5)
     plt.legend()
     
     plt.tight_layout()
     plt.savefig(os.path.join(results_dir, "poisson3d_fno_losses.png"), dpi=150)
+    print(f"Loss curves saved to: {os.path.join(results_dir, 'poisson3d_fno_losses.png')}")
 
 if __name__ == "__main__":
     main()

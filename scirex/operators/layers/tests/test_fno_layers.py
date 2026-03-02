@@ -28,7 +28,7 @@ Unit test for forward pass shape of the FNO2D model.
 import jax
 import jax.numpy as jnp
 from scirex.operators.models.fno import FNO2D
-from scirex.training.train_state import create_train_state
+from scirex.operators.training.train_state import create_train_state
 from scirex.operators.layers.fno_block import FNOBlock, FNOBlock3D
 
 def test_fno_block_shape():

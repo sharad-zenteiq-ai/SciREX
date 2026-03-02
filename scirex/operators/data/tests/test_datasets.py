@@ -34,9 +34,9 @@ import pytest
 import numpy as np
 import torch
 
-from ..darcy import random_darcy_batch
-from ..poisson import random_poisson_batch, random_poisson_3d_batch
-from ..data_utils import generate_poisson_data, generate_poisson_3d_data
+from scirex.operators.data.darcy import random_darcy_batch
+from scirex.operators.data.poisson import random_poisson_batch, random_poisson_3d_batch
+from scirex.operators.data.data_utils import generate_poisson_data, generate_poisson_3d_data
 
 test_data_dir = Path("./dataset_test")
 

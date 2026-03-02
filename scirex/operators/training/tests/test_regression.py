@@ -26,7 +26,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from scirex.operators.models.fno import FNO2D
-from scirex.training.train_state import create_train_state
+from scirex.operators.training.train_state import create_train_state
 
 def test_fno2d_overfit_toy():
     """Regression test: Check if FNO2D can overfit a single toy sample."""

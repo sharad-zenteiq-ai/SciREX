@@ -24,7 +24,7 @@
 
 import jax.numpy as jnp
 import pytest
-from scirex.losses.data_losses import mse, lp_loss
+from scirex.operators.losses.data_losses import mse, lp_loss
 
 def test_mse():
     """Test MSE loss calculation."""

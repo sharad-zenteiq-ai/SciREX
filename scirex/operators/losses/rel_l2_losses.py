@@ -23,7 +23,7 @@
 # please contact: contact@scirex.org
 
 import jax.numpy as jnp
-from scirex.losses.data_losses import lp_loss
+from .data_losses import lp_loss
 
 def phys_rel_l2_loss(pred_encoded: jnp.ndarray, target_encoded: jnp.ndarray, normalizer) -> jnp.ndarray:
     """

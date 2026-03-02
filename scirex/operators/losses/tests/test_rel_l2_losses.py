@@ -28,7 +28,7 @@ Unit tests for the physical Relative L2 loss computation.
 
 import jax.numpy as jnp
 import pytest
-from scirex.losses.rel_l2_losses import phys_rel_l2_loss
+from scirex.operators.losses.rel_l2_losses import phys_rel_l2_loss
 
 class MockNormalizer:
     """Mock normalizer for testing phys_rel_l2_loss."""

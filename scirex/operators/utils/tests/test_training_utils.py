@@ -24,7 +24,7 @@
 
 import jax.numpy as jnp
 import pytest
-from scirex.training.normalizers import GaussianNormalizer
+from scirex.operators.training.normalizers import GaussianNormalizer
 
 def test_gaussian_normalizer():
     """Test GaussianNormalizer encoding and decoding."""

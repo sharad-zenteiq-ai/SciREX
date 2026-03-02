@@ -43,8 +43,8 @@ from flax import linen as nn
 import json
 
 from scirex.operators.models.fno2d import FNO2D
-from scirex.training.train_state import create_train_state
-from scirex.data.datasets.poisson import generator as poisson_generator
+from scirex.operators.training import create_train_state
+from scirex.operators.data import generator as poisson_generator
 from configs.poisson_fno_config import FNO2DConfig
 
 class UnitGaussianNormalizer:
@@ -105,7 +105,7 @@ def main():
 
     # 4. Generate Data and Recreate Normalizers
     print("Generating validation batch and fitting normalizers...")
-    from scirex.data.datasets.poisson import random_poisson_batch
+    from scirex.operators.data import random_poisson_batch
     
     # Re-generate train sample (same seed as training) to get correct scales
     f_train_ref, u_train_ref = random_poisson_batch(

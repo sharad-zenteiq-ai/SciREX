@@ -53,10 +53,10 @@ import matplotlib.pyplot as plt
 import json
 
 from scirex.operators.models.fno import FNO2D
-from scirex.training.train_state import create_train_state, TrainState
+from scirex.operators.training import create_train_state, TrainState
 from scirex.training.step_fns import train_step, eval_step
-from scirex.losses.data_losses import mse, lp_loss
-from scirex.data.datasets.poisson import generator as poisson_generator
+from scirex.operators.losses import mse, lp_loss
+from scirex.operators.data import generator as poisson_generator
 from configs.poisson_fno_config import FNO2DConfig
 
 
@@ -156,7 +156,7 @@ def main():
     n_train = config.batch_size * config.steps_per_epoch  # total training samples
     
     print(f"Generating {n_train} training samples and {config.batch_size} test samples...")
-    from scirex.data.datasets.poisson import random_poisson_batch
+    from scirex.operators.data import random_poisson_batch
     
     # Generate all training data at once
     f_train, u_train = random_poisson_batch(
