@@ -54,7 +54,7 @@ import json
 
 from scirex.operators.models.fno import FNO2D
 from scirex.operators.training import create_train_state, TrainState
-from scirex.training.step_fns import train_step, eval_step
+from scirex.training import train_step, eval_step
 from scirex.operators.losses import mse, lp_loss
 from scirex.operators.data import generator as poisson_generator
 from configs.poisson_fno_config import FNO2DConfig

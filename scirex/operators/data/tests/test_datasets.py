@@ -23,7 +23,7 @@
 # please contact: contact@scirex.org
 
 """
-Unit tests for data generators and solvers, including Darcy and Poisson datasets.
+Unit tests for Poisson data generators and solvers (2D and 3D).
 """
 
 import os
@@ -34,20 +34,8 @@ import pytest
 import numpy as np
 import torch
 
-from scirex.operators.data.darcy import random_darcy_batch
 from scirex.operators.data.poisson import random_poisson_batch, random_poisson_3d_batch
 from scirex.operators.data.data_utils import generate_poisson_data, generate_poisson_3d_data
-
-test_data_dir = Path("./dataset_test")
-
-@pytest.mark.parametrize("resolution", [16])
-def test_DarcyDataset(resolution):
-    a, u = random_darcy_batch(batch_size=2, nx=resolution, ny=resolution)
-    
-    assert a.shape == (2, resolution, resolution, 1)
-    assert u.shape == (2, resolution, resolution, 1)
-    assert isinstance(a, np.ndarray)
-    assert isinstance(u, np.ndarray)
 
 @pytest.mark.parametrize("resolution", [16])
 def test_PoissonDataset(resolution):

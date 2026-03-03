@@ -42,7 +42,7 @@ import flax
 from flax import linen as nn
 import json
 
-from scirex.operators.models.fno2d import FNO2D
+from scirex.operators.models.fno import FNO2D
 from scirex.operators.training import create_train_state
 from scirex.operators.data import generator as poisson_generator
 from configs.poisson_fno_config import FNO2DConfig

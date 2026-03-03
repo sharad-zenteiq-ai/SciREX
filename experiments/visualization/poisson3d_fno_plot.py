@@ -60,80 +60,117 @@ class UnitGaussianNormalizer:
     def decode(self, x):
         return x * (self.std + self.eps) + self.mean
 
-def plot_3d_slice_comparison(f_test, u_test, u_pred, results_dir, filename="poisson3d_slices.png"):
+def plot_3d_slice_comparison(f_test, u_test, u_pred, results_dir, filename="poisson3d_fno_slices.png"):
     """
-    Plot 4 columns: Source Term, True Solution, FNO Prediction, Absolute Error.
-    Each row is a different sample at the middle-Z slice.
+    Enhanced Plotting: Multiple slices (Z-mid, Y-mid) with better colormaps.
+    Columns: Source, Truth, Prediction, Error.
     """
-    num_samples = min(3, f_test.shape[0])
-    nx, ny, nz = u_test.shape[1], u_test.shape[2], u_test.shape[3]
-    z_slice = nz // 2
+    num_samples = min(2, f_test.shape[0])
+    nx, ny, nz = u_test.shape[1:4]
+    z_mid = nz // 2
+    y_mid = ny // 2
     
-    fig, axes = plt.subplots(num_samples, 4, figsize=(20, 5 * num_samples))
+    # Each sample gets 2 rows (Z-slice and Y-slice)
+    fig, axes = plt.subplots(num_samples * 2, 4, figsize=(20, 4.5 * num_samples * 2))
     
     for i in range(num_samples):
-        # 1. Source Term f (middle-Z slice)
-        ax = axes[i, 0]
-        # input is (B, nx, ny, nz, 4) if include_mesh=True. Channel 0 is Source.
-        im = ax.imshow(f_test[i, :, :, z_slice, 0], cmap='viridis')
-        ax.set_title(f"Source f (Z={z_slice})")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
-        
-        # 2. True Solution u (middle-Z slice)
-        ax = axes[i, 1]
-        im = ax.imshow(u_test[i, :, :, z_slice, 0], cmap='jet')
-        ax.set_title("True Solution u")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
-        
-        # 3. FNO Prediction u_pred (middle-Z slice)
-        ax = axes[i, 2]
-        im = ax.imshow(u_pred[i, :, :, z_slice, 0], cmap='jet')
-        ax.set_title("FNO Prediction")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
-        
-        # 4. Absolute Error (middle-Z slice)
-        ax = axes[i, 3]
-        error = np.abs(u_test[i, :, :, z_slice, 0] - u_pred[i, :, :, z_slice, 0])
-        rel_err = np.linalg.norm(error) / (np.linalg.norm(u_test[i, ..., 0]) + 1e-8)
-        im = ax.imshow(error, cmap='hot')
-        ax.set_title(f"Abs Error (Rel: {rel_err:.2%})")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
-        
+        # --- Row 2*i: Z-slice ---
+        for row_offset, slice_idx, axis_name, slice_plane in [(0, z_mid, 'Z', 'XY'), (1, y_mid, 'Y', 'XZ')]:
+            curr_row = 2 * i + row_offset
+            
+            # 1. Source Term f
+            ax = axes[curr_row, 0]
+            if slice_plane == 'XY':
+                data = f_test[i, :, :, slice_idx, 0]
+            else:
+                data = f_test[i, :, slice_idx, :, 0]
+            im = ax.imshow(data, cmap='viridis', interpolation='nearest')
+            ax.set_title(f"Source f ({axis_name}={slice_idx})")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.axis('off')
+            
+            # 2. True Solution u
+            ax = axes[curr_row, 1]
+            if slice_plane == 'XY':
+                data_u = u_test[i, :, :, slice_idx, 0]
+            else:
+                data_u = u_test[i, :, slice_idx, :, 0]
+            im = ax.imshow(data_u, cmap='inferno')
+            ax.set_title(f"True u ({slice_plane})")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.axis('off')
+            
+            # 3. FNO Prediction
+            ax = axes[curr_row, 2]
+            if slice_plane == 'XY':
+                data_p = u_pred[i, :, :, slice_idx, 0]
+            else:
+                data_p = u_pred[i, :, slice_idx, :, 0]
+            im = ax.imshow(data_p, cmap='inferno')
+            ax.set_title(f"FNO Pred ({slice_plane})")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.axis('off')
+            
+            # 4. Abs Error
+            ax = axes[curr_row, 3]
+            error_slice = np.abs(data_u - data_p)
+            rel_err = np.linalg.norm(error_slice) / (np.linalg.norm(data_u) + 1e-8)
+            im = ax.imshow(error_slice, cmap='magma')
+            ax.set_title(f"Abs Error (Rel:{rel_err:.2%})")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.axis('off')
+            
     plt.tight_layout()
     save_path = os.path.join(results_dir, filename)
-    plt.savefig(save_path, dpi=150)
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"Slice comparison saved to {save_path}")
+    print(f"Enhanced slice comparison saved to {save_path}")
 
-def plot_3d_volume_realization(u_test_sample, u_pred_sample, results_dir, filename="poisson3d_volume.png"):
+def plot_3d_volume_realization(u_test_sample, u_pred_sample, results_dir, filename="poisson3d_fno_volume.png"):
     """
-    Plot 3D volume visualization for a single sample.
+    Premium cloud-like scatter visualization for 3D scalar fields.
     """
-    fig = plt.figure(figsize=(15, 7))
+    fig = plt.figure(figsize=(18, 9))
     
-    # 1. Ground Truth Volume
+    def add_cloud_subplot(ax, data, title):
+        dx, dy, dz = data.shape
+        x, y, z = np.meshgrid(np.arange(dx), np.arange(dy), np.arange(dz), indexing='ij')
+        
+        vals = data.flatten()
+        points = np.stack([x.flatten(), y.flatten(), z.flatten()], axis=1)
+        
+        v_min, v_max = vals.min(), vals.max()
+        v_norm = (vals - v_min) / (v_max - v_min + 1e-8)
+        
+        # Show points with intensity > 20%
+        mask = v_norm > 0.2
+        p_filtered = points[mask]
+        v_filtered = v_norm[mask]
+        
+        # Manually map colors to include variable alpha
+        cmap = plt.get_cmap('inferno')
+        colors = cmap(v_filtered)
+        colors[:, 3] = v_filtered * 0.5 # intensity-based alpha
+        
+        ax.scatter(p_filtered[:, 0], p_filtered[:, 1], p_filtered[:, 2], 
+                  c=colors, s=v_filtered*25, edgecolors='none')
+        
+        ax.set_title(title, fontsize=16)
+        ax.axis('off')
+        ax.set_box_aspect([dx, dy, dz])
+        ax.view_init(elev=20, azim=45)
+
     ax1 = fig.add_subplot(1, 2, 1, projection='3d')
-    # Use thresholding to show high-magnitude structure
-    threshold = u_test_sample.mean() + 0.5 * u_test_sample.std()
-    voxels = u_test_sample > threshold
-    ax1.voxels(voxels, facecolors='cyan', edgecolor='k', alpha=0.3)
-    ax1.set_title("Target 3D Structure")
+    add_cloud_subplot(ax1, u_test_sample, "Target Volume (Cloud Density)")
     
-    # 2. Prediction Volume
     ax2 = fig.add_subplot(1, 2, 2, projection='3d')
-    voxels_pred = u_pred_sample > threshold
-    ax2.voxels(voxels_pred, facecolors='orange', edgecolor='k', alpha=0.3)
-    ax2.set_title("Pred 3D Structure")
+    add_cloud_subplot(ax2, u_pred_sample, "FNO Predicted Volume (Cloud Density)")
     
     plt.tight_layout()
     save_path = os.path.join(results_dir, filename)
-    plt.savefig(save_path, dpi=150)
+    plt.savefig(save_path, dpi=180, bbox_inches='tight')
     plt.close()
-    print(f"Volume visualization saved to {save_path}")
+    print(f"Premium volume cloud visualization saved to {save_path}")
 
 def main():
     # 1. Load Configuration
@@ -210,7 +247,7 @@ def main():
     u_pred = y_normalizer.decode(u_pred_encoded)
     
     # 6. Visualization
-    results_dir = os.path.join(project_root, "experiments/results/poisson3d")
+    results_dir = os.path.join(project_root, "experiments/results/poisson3d_lploss")
     os.makedirs(results_dir, exist_ok=True)
     
     # Plot Slices (Z-middle)
