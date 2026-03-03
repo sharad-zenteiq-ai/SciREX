@@ -77,11 +77,12 @@ def main():
         channel_mlp_skip=config.channel_mlp_skip,
         use_channel_mlp=config.use_channel_mlp,
         padding=config.domain_padding,
+        use_norm=config.use_norm,
         activation=nn.gelu
     )
     
     # 3. Load Checkpoint
-    ckpt_path = os.path.join(project_root, "experiments/checkpoints/poisson_fno_params.pkl")
+    ckpt_path = os.path.join(project_root, "experiments/checkpoints/poisson_fno_lploss_params.pkl")
     if not os.path.exists(ckpt_path):
         print(f"Error: Checkpoint not found at {ckpt_path}")
         return
@@ -109,7 +110,7 @@ def main():
     
     # Re-generate train sample (same seed as training) to get correct scales
     f_train_ref, u_train_ref = random_poisson_batch(
-        batch_size=100, nx=nx, ny=ny, channels=1, rng_seed=config.seed
+        batch_size=config.n_train, nx=nx, ny=ny, channels=1, rng_seed=config.seed
     )
     x_normalizer = UnitGaussianNormalizer(f_train_ref)
     y_normalizer = UnitGaussianNormalizer(u_train_ref)
@@ -125,8 +126,11 @@ def main():
     u_pred_encoded = model.apply({"params": loaded_params}, f_test_encoded)
     u_pred = y_normalizer.decode(u_pred_encoded)
     
+    print(f"True solution u stats: min={u_test.min():.4f}, max={u_test.max():.4f}, mean={u_test.mean():.4f}")
+    print(f"FNO prediction u stats: min={u_pred.min():.4f}, max={u_pred.max():.4f}, mean={u_pred.mean():.4f}")
+    
     # 6. Plotting Field Comparisons (Only 2D Squares)
-    plot_dir = os.path.join(project_root, "experiments/results/poisson")
+    plot_dir = os.path.join(project_root, "experiments/results/poisson2d_lploss")
     os.makedirs(plot_dir, exist_ok=True)
     
     num_plots = min(3, f_test.shape[0])
@@ -144,14 +148,16 @@ def main():
         
         # Ground Truth u
         ax = ax_row[1]
-        im = ax.imshow(u_test[i, ..., 0], cmap="inferno")
+        v_min, v_max = u_test[i, ..., 0].min(), u_test[i, ..., 0].max()
+        # Use a balanced range for symmetric view if needed, but at least same for both
+        im = ax.imshow(u_test[i, ..., 0], cmap="RdBu_r", vmin=v_min, vmax=v_max)
         ax.set_title("True Solution u")
         fig.colorbar(im, ax=ax)
         ax.axis('off')
         
         # Prediction u_pred
         ax = ax_row[2]
-        im = ax.imshow(u_pred[i, ..., 0], cmap="inferno")
+        im = ax.imshow(u_pred[i, ..., 0], cmap="RdBu_r", vmin=v_min, vmax=v_max)
         ax.set_title("FNO Prediction")
         fig.colorbar(im, ax=ax)
         ax.axis('off')
@@ -160,6 +166,7 @@ def main():
         ax = ax_row[3]
         err = np.abs(u_test[i, ..., 0] - u_pred[i, ..., 0])
         rel_err = np.linalg.norm(err) / np.linalg.norm(u_test[i, ..., 0])
+        print(f"Sample {i} Rel L2 Error: {rel_err:.4f}")
         im = ax.imshow(err, cmap="magma")
         ax.set_title(f"Error (Rel: {rel_err:.2%})")
         fig.colorbar(im, ax=ax)

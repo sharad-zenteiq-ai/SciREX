@@ -56,7 +56,7 @@ class FNO2DConfig:
     epochs: int = 500
     steps_per_epoch: int = 10
     n_test: int = 200
-    n_train: int = 1000
+    n_train: int = 2000
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"
@@ -112,6 +112,10 @@ class FNO2DConfig:
     @property
     def channel_mlp_skip(self):
         return self.model.channel_mlp_skip
+
+    @property
+    def use_norm(self):
+        return self.model.use_norm
 
     @property
     def domain_padding(self):
