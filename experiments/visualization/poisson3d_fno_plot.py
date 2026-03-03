@@ -129,48 +129,82 @@ def plot_3d_slice_comparison(f_test, u_test, u_pred, results_dir, filename="pois
 def plot_3d_volume_realization(u_test_sample, u_pred_sample, results_dir, filename="poisson3d_fno_volume.png"):
     """
     Premium cloud-like scatter visualization for 3D scalar fields.
+    Now with 3 subplots: True, Predicted, and Absolute Error.
+    Using [0, 1] axes and a consistent vibrant gradient colormap.
     """
-    fig = plt.figure(figsize=(18, 9))
+    fig = plt.figure(figsize=(24, 7))
     
-    def add_cloud_subplot(ax, data, title):
+    u_error = np.abs(u_test_sample - u_pred_sample)
+    
+    # Define common scale for True and Pred for better comparison
+    v_min_global = min(u_test_sample.min(), u_pred_sample.min())
+    v_max_global = max(u_test_sample.max(), u_pred_sample.max())
+
+    def add_cloud_subplot(ax, data, title, vmin=None, vmax=None, cmap_name='jet'):
         dx, dy, dz = data.shape
-        x, y, z = np.meshgrid(np.arange(dx), np.arange(dy), np.arange(dz), indexing='ij')
+        # Use [0, 1] coordinates as per data generation
+        x_lin = np.linspace(0, 1, dx)
+        y_lin = np.linspace(0, 1, dy)
+        z_lin = np.linspace(0, 1, dz)
+        x, y, z = np.meshgrid(x_lin, y_lin, z_lin, indexing='ij')
         
         vals = data.flatten()
         points = np.stack([x.flatten(), y.flatten(), z.flatten()], axis=1)
         
-        v_min, v_max = vals.min(), vals.max()
+        v_min = vmin if vmin is not None else vals.min()
+        v_max = vmax if vmax is not None else vals.max()
         v_norm = (vals - v_min) / (v_max - v_min + 1e-8)
         
-        # Show points with intensity > 20%
-        mask = v_norm > 0.2
+        # Show points with intensity > 15% (normalized)
+        mask = v_norm > 0.15
         p_filtered = points[mask]
         v_filtered = v_norm[mask]
+        actual_vals_filtered = vals[mask]
         
-        # Manually map colors to include variable alpha
-        cmap = plt.get_cmap('inferno')
+        # Manually map colors to include variable alpha for "cloud" effect
+        cmap = plt.get_cmap(cmap_name)
         colors = cmap(v_filtered)
-        colors[:, 3] = v_filtered * 0.5 # intensity-based alpha
+        colors[:, 3] = v_filtered * 0.7 # Alpha based on intensity
         
         ax.scatter(p_filtered[:, 0], p_filtered[:, 1], p_filtered[:, 2], 
-                  c=colors, s=v_filtered*25, edgecolors='none')
+                  c=actual_vals_filtered, cmap=cmap_name, s=v_filtered*40, 
+                  edgecolors='none', vmin=v_min, vmax=v_max)
         
-        ax.set_title(title, fontsize=16)
-        ax.axis('off')
-        ax.set_box_aspect([dx, dy, dz])
+        ax.set_title(title, fontsize=18, fontweight='bold', pad=20)
+        
+        # Set axes limits to [0, 1]
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_zlim(0, 1)
+        
+        # Show axes and labels
+        ax.set_xlabel('X', fontsize=12)
+        ax.set_ylabel('Y', fontsize=12)
+        ax.set_zlabel('Z', fontsize=12)
+        
+        # Add colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=v_min, vmax=v_max))
+        sm.set_array([])
+        cb = fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.1)
+        cb.set_label('Value', fontsize=12)
+
+        ax.set_box_aspect([1, 1, 1])
         ax.view_init(elev=20, azim=45)
 
-    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
-    add_cloud_subplot(ax1, u_test_sample, "Target Volume (Cloud Density)")
+    ax1 = fig.add_subplot(1, 3, 1, projection='3d')
+    add_cloud_subplot(ax1, u_test_sample, "True Solution", vmin=v_min_global, vmax=v_max_global)
     
-    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
-    add_cloud_subplot(ax2, u_pred_sample, "FNO Predicted Volume (Cloud Density)")
+    ax2 = fig.add_subplot(1, 3, 2, projection='3d')
+    add_cloud_subplot(ax2, u_pred_sample, "Predicted Solution", vmin=v_min_global, vmax=v_max_global)
+
+    ax3 = fig.add_subplot(1, 3, 3, projection='3d')
+    add_cloud_subplot(ax3, u_error, "Absolute Error")
     
     plt.tight_layout()
     save_path = os.path.join(results_dir, filename)
-    plt.savefig(save_path, dpi=180, bbox_inches='tight')
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"Premium volume cloud visualization saved to {save_path}")
+    print(f"Volume visualization with correct axes and gradient colormap saved to {save_path}")
 
 def main():
     # 1. Load Configuration

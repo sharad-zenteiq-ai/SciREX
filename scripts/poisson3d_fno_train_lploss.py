@@ -121,6 +121,7 @@ class UnitGaussianNormalizer:
 def main():
     # 1. Load Configuration
     config = FNO3DConfig()
+    config.learning_rate = 1e-3 # Stabilize for LpLoss optimization
     
     # Prng Key
     rng = jax.random.PRNGKey(config.seed)
@@ -135,7 +136,7 @@ def main():
         out_channels=config.out_channels,
         lifting_channel_ratio=config.lifting_channel_ratio,
         projection_channel_ratio=config.projection_channel_ratio,
-        use_grid=config.use_grid,
+        use_grid=False, # Data already has grid (4 channels)
         use_norm=config.use_norm,
         fno_skip=config.fno_skip,
         channel_mlp_skip=config.channel_mlp_skip,
@@ -150,8 +151,10 @@ def main():
     total_steps = config.epochs * steps_per_epoch
     
     # Create Train State
+    # Data has 4 channels (1 source + 3 spatial coordinates)
+    in_channels = 4
     nx, ny, nz = config.resolution
-    input_shape = (config.batch_size, nx, ny, nz, config.in_channels)
+    input_shape = (config.batch_size, nx, ny, nz, in_channels)
     state = create_train_state(
         rng=init_rng, 
         model=model, 

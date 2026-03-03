@@ -130,11 +130,11 @@ class FNO3DConfig:
     model: FNO_Medium3D = field(default_factory=FNO_Medium3D)
 
     # ── Training Parameters ──
-    learning_rate: float = 1e-3
+    learning_rate: float = 5e-3
     weight_decay: float = 1e-4
-    batch_size: int = 10
+    batch_size: int = 8
     epochs: int = 500
-    steps_per_epoch: int = 100
+    steps_per_epoch: int = 50
     n_test: int = 20
     n_train: int = 2000
 

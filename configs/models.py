@@ -222,8 +222,8 @@ class FNO_Medium3D(SimpleFNOConfig):
     Default for 3D operator tasks such as 3D Poisson.
     Includes instance norm and a positional embedding for stability.
     """
-    n_modes: tuple = (12, 12, 12)
-    hidden_channels: int = 64
+    n_modes: tuple = (16, 16, 16)
+    hidden_channels: int = 128
     n_layers: int = 4
     in_channels: int = 4
     out_channels: int = 1
