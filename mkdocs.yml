@@ -28,6 +28,12 @@ theme:
 
 nav:
   - Docs: index.md
+  - Theory Guide:
+      - Fourier Neural Operators: theory_guide/fno.md
+  - User Guide:
+      - FNO Poisson Examples: user_guide/fno_poisson.md
+  - Developer Guide:
+      - FNO Testing Suite: dev_guide/testing.md
   - Core:
       - Machine Learning:
           - Supervised:
