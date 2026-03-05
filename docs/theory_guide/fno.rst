@@ -8,24 +8,16 @@ It represents a practical, end-to-end guide covering the operator theory and our
 Operator Learning
 ---------------------------------
 
-Many problems in science and engineering involve solving PDEs. Traditional
-numerical solvers—such as **finite difference** or **finite element** methods—
-work by discretizing the domain into a grid and solving the equation on that grid.
-This approach is reliable, but it comes with limitations:
-
-- very fine meshes are expensive,
-- changing resolution often means re-running everything,
-- solving many similar PDE instances is slow.
+Many problems in science and engineering involve solving partial differential equations (PDEs). Traditional numerical 
+solvers such as finite difference and finite element methods approach this by discretizing the domain into a grid and solving the equation on that grid. While this approach is reliable and widely used, it has several practical limitations. Achieving high accuracy often requires very fine meshes, which can be computationally expensive. In addition, changing the grid resolution typically requires solving the problem again from scratch, and when many similar PDE instances need to be solved, the overall computational cost can become quite large.
 
 Operator learning takes a different perspective.
-
 Instead of learning mappings between **vectors**, we learn mappings between
 **functions**. The model does not solve one PDE at a time—it learns an *operator*
 that maps inputs (coefficients, source terms, boundary conditions) directly to
 solutions.
 
 The key idea is to **learn in continuous function space**, not on a fixed grid.
-
 The neural operator is mesh-independent, different from the standard deep 
 learning methods such as CNNs. It can be trained on one mesh and evaluated on 
 another. By parameterizing the model in function space, it learns the continuous 
@@ -34,17 +26,17 @@ solution function instead of discretized vectors.
 Comparison
 ^^^^^^^^^^
 
-+----------------------------+-----------------------------+
-| Conventional PDE Solvers   | Neural Operators            |
-+============================+=============================+
-| Solve one PDE instance     | Learn a family of PDEs      |
-+----------------------------+-----------------------------+
-| Require explicit equations| Data-driven, black-box      |
-+----------------------------+-----------------------------+
-| Resolution-dependent       | Resolution & mesh invariant |
-+----------------------------+-----------------------------+
-| Slow on fine grids         | Fast inference after training|
-+----------------------------+-----------------------------+
++----------------------------+-------------------------------+
+| Conventional PDE Solvers   | Neural Operators              |
++============================+===============================+
+| Solve one PDE instance     | Learn a family of PDEs        |
++----------------------------+-------------------------------+
+| Require explicit equations | Data-driven, black-box        |
++----------------------------+-------------------------------+
+| Resolution-dependent       | Resolution & mesh invariant   |
++----------------------------+-------------------------------+
+| Slow on fine grids         | Fast inference after training |
++----------------------------+-------------------------------+
 
 
 The Fourier Layer (Core Idea)
@@ -65,19 +57,9 @@ There are two main motivations for using the Fourier transform:
 A convolution in physical space becomes a pointwise multiplication in Fourier
 space. Each Fourier layer follows three steps:
 
-1. Transform to Fourier space:
-
-   .. math::
-
-      x \xrightarrow{\mathcal{F}} \hat{x}
-
+1. Transform to Fourier space.
 2. Apply a learnable linear transform on the lower Fourier modes.
-
-3. Transform back to physical space:
-
-   .. math::
-
-      \hat{x} \xrightarrow{\mathcal{F}^{-1}} x
+3. Transform back to physical space.
 
 The result is combined with a bias term (a standard linear layer), followed by a
 nonlinear activation in the spatial domain. This nonlinearity helps recover high-frequency details and

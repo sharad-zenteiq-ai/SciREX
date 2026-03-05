@@ -11,9 +11,9 @@ and incompressible fluid flow.
 In all examples here, our goal is to learn the *operator* that maps a source
 term :math:`f` to the corresponding solution :math:`u`:
 
-.. math::
-
-   - \nabla^2 u(x) = f(x), \qquad x \in \Omega
+$$
+- \nabla^2 u(x) = f(x) \quad \text{for } x \in \Omega
+$$
 
 Rather than solving this equation from scratch for every new input, we train
 an FNO model to approximate this mapping directly and efficiently.
@@ -28,19 +28,15 @@ The 2D Poisson example is implemented in:
 
    scripts/poisson2d_fno_train_lploss.py
 
-### Problem Setup
+Problem Setup
+----------------------------
 
-We solve the equation on the unit square domain:
-
-.. math::
-
-   \Omega = [0, 1] \times [0, 1]
-
-with **periodic boundary conditions**. This choice makes the problem well-suited
+We solve the equation on the unit square domain $[0, 1] \times [0, 1]$ with periodic boundary conditions.This choice makes the problem well-suited
 for Fourier-based methods and allows us to use a spectral solver to generate
 high-quality ground truth data.
 
-### Data Generation
+Data Generation
+----------------------------
 
 We use **Gaussian Random Fields (GRFs)** to generate physically realistic, 
 smooth source terms $f$. The exact ground truth $u$ is solved using an ultra-fast Spectral Poisson Solver.
@@ -55,7 +51,8 @@ For each generated source term, the corresponding ground truth solution
 :math:`u` is computed using an ultra-fast **spectral Poisson solver**. This
 ensures that the model is trained against highly accurate reference solutions.
 
-### Model Configuration
+Model Configuration
+----------------------------
 
 For the 2D problem, we use the following preset:
 
@@ -67,7 +64,8 @@ For the 2D problem, we use the following preset:
 This configuration provides a good balance between expressiveness and
 computational cost.
 
-### Loss Function
+Loss Function
+----------------------------
 
 Training uses a **Relative L2 Loss**, which is more informative than absolute
 error for PDE solutions:
@@ -77,7 +75,8 @@ error for PDE solutions:
 - The loss automatically adapts to the scale of the solution field, making
   comparisons across samples more meaningful.
 
-### Training Pipeline
+Training Pipeline
+----------------------------
 
 The training script manages deterministic GPU operations, dataset standard 
 scaling, cosine learning rate schedules, and model serialization seamlessly.
@@ -94,26 +93,22 @@ The 3D variant extends the same idea to volumetric domains and is implemented in
 
    scripts/poisson3d_fno_train_lploss.py
 
-### Problem Setup
+Problem Setup
+----------------------------
 
-The domain is extended to a cube:
-
-.. math::
-
-   \Omega = [0, 1]^3
+The domain is extended to a cube $[0, 1] \times [0, 1] \times [0, 1]$ with periodic boundary conditions.
 
 Learning operators in 3D is significantly more challenging due to increased
 memory requirements and computational cost.
 
-### Grid Resolution and Complexity
+Grid Resolution and Complexity
+----------------------------
 
-To keep training tractable while still capturing 3D structure, we use a:
-
-- **32 × 32 × 32** spatial grid
-
+To keep training tractable while still capturing 3D structure, we use a **32 × 32 × 32** spatial grid
 This resolution strikes a practical balance between accuracy and resource usage.
 
-### Model Configuration
+Model Configuration
+----------------------------
 
 For the 3D case, we use:
 
@@ -123,7 +118,8 @@ For the 3D case, we use:
 Despite using fewer modes than in 2D, the model is still able to learn rich
 three-dimensional solution structures.
 
-### Visualization Strategy
+Visualization Strategy
+----------------------------
 
 Visualizing 3D PDE solutions directly is non-trivial. To address this, we
 provide dedicated visualization scripts:
