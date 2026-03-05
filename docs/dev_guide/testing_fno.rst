@@ -21,6 +21,7 @@ Neural Operator Layers
 ----------------------
 
 A large part of FNO’s functionality comes from its spectral layers. These layers operate on Fourier coefficients and interact with spatial grids in non-trivial ways. The tests in this section ensure that these low-level operations behave correctly.
+
 +------------------------+---------------------------------------------------------+--------------------------------------------------------------+
 | Test Focus             | What it checks                                          | Why it matters                                               |
 +========================+=========================================================+==============================================================+

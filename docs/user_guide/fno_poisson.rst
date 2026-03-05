@@ -11,9 +11,7 @@ and incompressible fluid flow.
 In all examples here, our goal is to learn the *operator* that maps a source
 term :math:`f` to the corresponding solution :math:`u`:
 
-$$
-- \nabla^2 u(x) = f(x) \quad \text{for } x \in \Omega
-$$
+:math:`-\nabla^2 u(x) = f(x)`
 
 Rather than solving this equation from scratch for every new input, we train
 an FNO model to approximate this mapping directly and efficiently.
