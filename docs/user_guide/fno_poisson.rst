@@ -29,7 +29,7 @@ The 2D Poisson example is implemented in:
 Problem Setup
 ----------------------------
 
-We solve the equation on the unit square domain $[0, 1] \times [0, 1]$ with periodic boundary conditions.This choice makes the problem well-suited
+We solve the equation on the unit square domain $[0, 1] \\times [0, 1]$ with periodic boundary conditions.This choice makes the problem well-suited
 for Fourier-based methods and allows us to use a spectral solver to generate
 high-quality ground truth data.
 
@@ -94,7 +94,7 @@ The 3D variant extends the same idea to volumetric domains and is implemented in
 Problem Setup
 ----------------------------
 
-The domain is extended to a cube $[0, 1] \times [0, 1] \times [0, 1]$ with periodic boundary conditions.
+The domain is extended to a cube $[0, 1] \\times [0, 1] \\times [0, 1]$ with periodic boundary conditions.
 
 Learning operators in 3D is significantly more challenging due to increased
 memory requirements and computational cost.
