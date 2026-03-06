@@ -47,3 +47,58 @@ def lp_loss(pred: jnp.ndarray, target: jnp.ndarray, p: int = 2) -> jnp.ndarray:
     
     # Return mean relative error over batch
     return jnp.mean(diff_norm / (targ_norm + 1e-8))
+
+
+def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
+    """Relative H1 Sobolev loss.
+
+    Matches the ``neuraloperator`` ``H1Loss(d=2)`` convention:
+
+        per_sample = sqrt(diff) / (sqrt(ynorm) + eps)
+
+    where ``diff`` and ``ynorm`` are the squared L2 norms of the
+    value *and* first-order spatial gradients (central finite
+    differences with periodic BCs).  Reduction: ``sum`` over the
+    batch (reference default).
+
+    The function is agnostic to the number of spatial dimensions
+    beyond the first two (e.g. an extra trivial z-dim is fine).
+
+    Args:
+        pred: Predictions, shape ``(batch, nx, ny, ...)``.
+        target: Ground truth, same shape as *pred*.
+        eps: Small constant to avoid division by zero.
+
+    Returns:
+        Scalar H1 loss.
+    """
+    # L2 part ----------------------------------------------------------
+    pred_flat = pred.reshape(pred.shape[0], -1)
+    target_flat = target.reshape(target.shape[0], -1)
+
+    diff_l2 = jnp.sum((pred_flat - target_flat) ** 2, axis=-1)
+    ynorm_l2 = jnp.sum(target_flat ** 2, axis=-1)
+
+    # Spatial derivatives via periodic central differences (x=dim1, y=dim2)
+    dx_pred = jnp.roll(pred, -1, axis=1) - jnp.roll(pred, 1, axis=1)
+    dx_target = jnp.roll(target, -1, axis=1) - jnp.roll(target, 1, axis=1)
+    dy_pred = jnp.roll(pred, -1, axis=2) - jnp.roll(pred, 1, axis=2)
+    dy_target = jnp.roll(target, -1, axis=2) - jnp.roll(target, 1, axis=2)
+
+    dx_diff_flat = (dx_pred - dx_target).reshape(pred.shape[0], -1)
+    dx_target_flat = dx_target.reshape(pred.shape[0], -1)
+    dy_diff_flat = (dy_pred - dy_target).reshape(pred.shape[0], -1)
+    dy_target_flat = dy_target.reshape(pred.shape[0], -1)
+
+    diff_dx = jnp.sum(dx_diff_flat ** 2, axis=-1)
+    ynorm_dx = jnp.sum(dx_target_flat ** 2, axis=-1)
+    diff_dy = jnp.sum(dy_diff_flat ** 2, axis=-1)
+    ynorm_dy = jnp.sum(dy_target_flat ** 2, axis=-1)
+
+    # Total H1 norm: value + gradients
+    diff_total = diff_l2 + diff_dx + diff_dy
+    ynorm_total = ynorm_l2 + ynorm_dx + ynorm_dy
+
+    # Relative norm per sample, then sum (reference default reduction)
+    h1_per_sample = jnp.sqrt(diff_total) / (jnp.sqrt(ynorm_total) + eps)
+    return jnp.sum(h1_per_sample)

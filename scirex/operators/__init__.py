@@ -58,4 +58,4 @@ from .models.fno import FNO2D, FNO3D
 from . import data
 from . import losses
 from . import training
-from . import config
+# from . import config
