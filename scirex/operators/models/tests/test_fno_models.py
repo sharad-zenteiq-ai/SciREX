@@ -27,6 +27,14 @@ Unit tests for the FNO2D and FNO3D model architectures.
 Verifies forward pass shapes and parameter consistency.
 """
 
+import os
+import sys
+
+# Ensure project root is in path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -97,3 +105,8 @@ def test_fno2d_variable_channels():
     y = model.apply(params, x)
     
     assert y.shape == (batch, nx, ny, out_channels)
+
+
+if __name__ == "__main__":
+    import pytest
+    sys.exit(pytest.main([__file__, "-v", "-c", "/dev/null"]))
