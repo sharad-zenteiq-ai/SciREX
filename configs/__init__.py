@@ -45,4 +45,5 @@ from configs.ns_fno3d_config import (
     NSFNO3D_Small,
     NSFNO3D_Medium,
     NSFNO3D_Large,
+    NSFNO3D_Huge,
 )  # noqa: F401

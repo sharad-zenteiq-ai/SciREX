@@ -171,13 +171,17 @@ def train_step_lp(state, batch_x, batch_y):
 
 
 @jax.jit
-def eval_step(state, batch_x, batch_y):
-    """Evaluate: compute H1, relative L2, and MSE."""
-    pred = state.apply_fn({"params": state.params}, batch_x)
+def eval_step(state, batch_x, batch_y_raw, y_mean, y_std, eps=1e-7):
+    """Evaluate: compute H1, relative L2, and MSE on physical (unnormalized) scales."""
+    pred_encoded = state.apply_fn({"params": state.params}, batch_x)
+    
+    # Decode prediction to physical scale
+    pred = pred_encoded * (y_std + eps) + y_mean
+
     return {
-        "h1": h1_loss(pred, batch_y),
-        "rel_l2": lp_loss(pred, batch_y),
-        "mse": mse(pred, batch_y),
+        "h1": h1_loss(pred, batch_y_raw),
+        "rel_l2": lp_loss(pred, batch_y_raw),
+        "mse": mse(pred, batch_y_raw),
         "pred": pred,
     }
 
@@ -189,13 +193,19 @@ def main():
 
     # ── 1. Load Data ──
     train_x, train_y, test_x, test_y = load_ns_data(config)
+    test_y_raw = test_y.copy()
 
     # ── 2. Normalize ──
     if config.encode_output:
         y_normalizer = GaussianNormalizer(train_y)
         train_y = y_normalizer.encode(train_y)
         test_y = y_normalizer.encode(test_y)
+        y_mean = jnp.array(y_normalizer.mean)
+        y_std = jnp.array(y_normalizer.std)
         print("  Output normalized (channel-wise Gaussian)")
+    else:
+        y_mean = jnp.zeros(1)
+        y_std = jnp.ones(1)
 
     if config.encode_input:
         x_normalizer = GaussianNormalizer(train_x)
@@ -206,6 +216,7 @@ def main():
     # Convert to jnp
     train_x, train_y = jnp.array(train_x), jnp.array(train_y)
     test_x, test_y = jnp.array(test_x), jnp.array(test_y)
+    test_y_raw = jnp.array(test_y_raw)
 
     # ── 3. Model ──
     print(
@@ -304,8 +315,8 @@ def main():
         for i in range(0, num_test, config.batch_size):
             end_i = min(i + config.batch_size, num_test)
             bx = test_x[i:end_i]
-            by = test_y[i:end_i]
-            ev = eval_step(state, bx, by)
+            by_raw = test_y_raw[i:end_i]
+            ev = eval_step(state, bx, by_raw, y_mean, y_std)
             test_h1_total += float(ev["h1"])
             test_l2_total += float(ev["rel_l2"])
             n_test_batches += 1
@@ -341,11 +352,13 @@ def main():
 
     # ── 9. Save sample predictions for visualization ──
     n_viz = min(8, num_test)
-    viz_pred = state.apply_fn({"params": state.params}, test_x[:n_viz])
+    viz_pred_encoded = state.apply_fn({"params": state.params}, test_x[:n_viz])
+    viz_pred = viz_pred_encoded * (y_std + 1e-7) + y_mean
+    
     np.savez(
         os.path.join(results_dir, "ns_fno3d_predictions.npz"),
         inputs=np.array(test_x[:n_viz]),
-        targets=np.array(test_y[:n_viz]),
+        targets=np.array(test_y_raw[:n_viz]),
         predictions=np.array(viz_pred),
     )
     print(f"Sample predictions saved to: {results_dir}/ns_fno3d_predictions.npz")

@@ -36,27 +36,31 @@ Usage
 -----
     from configs.ns_fno3d_config import NSFNO3DConfig, NSFNO3D_Small
 
-    # Use default medium config
+    # Use default model (Large)
     config = NSFNO3DConfig()
     
-    # Or override with a small model
-    config = NSFNO3DConfig(model=NSFNO3D_Small())
+    # Or override with a medium model
+    config = NSFNO3DConfig(model=NSFNO3D_Medium())
 """
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Tuple
 from configs.models import SimpleFNOConfig
 
+
+# ═══════════════════════════════════════════════════════════════════
+#  NS FNO3D  P R E S E T S
+# ═══════════════════════════════════════════════════════════════════
 
 @dataclass
 class NSFNO3D_Small(SimpleFNOConfig):
     """Small FNO3D architecture preset tuned for 2D Navier-Stokes."""
-    n_modes: tuple = (16, 16, 1)
+    n_modes: Tuple[int, int, int] = (16, 16, 1)
     hidden_channels: int = 32
     n_layers: int = 4
     in_channels: int = 1
     out_channels: int = 1
-    use_grid: bool = False
+    use_grid: bool = True
     use_norm: bool = False
 
 
@@ -64,33 +68,51 @@ class NSFNO3D_Small(SimpleFNOConfig):
 class NSFNO3D_Medium(SimpleFNOConfig):
     """Medium FNO3D architecture preset tuned for 2D Navier-Stokes.
     Matches the original reference script baseline."""
-    n_modes: tuple = (32, 32, 1)
+    n_modes: Tuple[int, int, int] = (32, 32, 1)
     hidden_channels: int = 64
     n_layers: int = 4
     in_channels: int = 1
     out_channels: int = 1
-    use_grid: bool = False
+    use_grid: bool = True
     use_norm: bool = False
 
 
 @dataclass
 class NSFNO3D_Large(SimpleFNOConfig):
     """Large FNO3D architecture preset tuned for 2D Navier-Stokes.
-    Uses wider hidden channels (max spatial modes is 32 for 64x64 grid)."""
-    n_modes: tuple = (32, 32, 1)
+    Increases hidden channels for more representational power."""
+    n_modes: Tuple[int, int, int] = (32, 32, 1)
     hidden_channels: int = 128
     n_layers: int = 4
     in_channels: int = 1
     out_channels: int = 1
-    use_grid: bool = False
+    use_grid: bool = True
     use_norm: bool = False
 
+
+@dataclass
+class NSFNO3D_Huge(SimpleFNOConfig):
+    """Huge FNO3D architecture preset tuned for 2D Navier-Stokes.
+    Maximum complexity for single-GPU training."""
+    n_modes: Tuple[int, int, int] = (32, 32, 1)
+    hidden_channels: int = 256
+    n_layers: int = 4
+    in_channels: int = 1
+    out_channels: int = 1
+    use_grid: bool = True
+    use_norm: bool = False
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  E X P E R I M E N T   C O N F I G
+# ═══════════════════════════════════════════════════════════════════
 
 @dataclass
 class NSFNO3DConfig:
     """Full experiment config for Navier-Stokes 2D + FNO3D."""
 
     # ── Model Architecture (preset, can be swapped) ──
+    # Default to Medium to match neuraloperator reference
     model: SimpleFNOConfig = field(default_factory=NSFNO3D_Medium)
 
     # ── Dataset Paths ──
@@ -99,12 +121,15 @@ class NSFNO3DConfig:
     test_file: str = "ns_test_64.pt"
 
     # ── Data ──
+    # Note: ns_train_64.pt only contains 1000 samples. 
+    # n_train = 1000 is used even if 10000 is requested.
     n_train: int = 1000
     n_test: int = 200
     encode_input: bool = True
     encode_output: bool = True
 
     # ── Training Parameters ──
+    # Ref: neuraloperator default 3e-4, 600 epochs
     learning_rate: float = 3e-4
     weight_decay: float = 1e-4
     batch_size: int = 8
@@ -115,7 +140,7 @@ class NSFNO3DConfig:
     scheduler_type: Literal["step", "cosine"] = "step"
     scheduler_step_size: int = 100  # Decay LR every N epochs
     scheduler_gamma: float = 0.5
-    cosine_decay_epochs: int = 100
+    cosine_decay_epochs: int = 600
 
     # ── Loss ──
     train_loss: str = "h1"  # "h1" or "lp"
