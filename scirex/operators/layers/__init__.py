@@ -23,16 +23,15 @@
 # please contact: contact@scirex.org
 
 """
-Core architectural layers for Neural Operators, including spectral convolutions, 
-domain padding, and coordinate embeddings.
+Core architectural layers for different Neural Operators, including spectral convolutions, 
+channel mlp, padding, embeddings, skip connection, integral transform, different model blocks such as 
+FNOBlock,..., etc. 
 """
 
 from .channel_mlp import ChannelMLP
 from .spectral_conv import SpectralConv2D, SpectralConv3D
-# from .wavelet_conv import WaveletConv1D, WaveletConv2D
 from .padding import DomainPadding
 from .embeddings import GridEmbedding
 from .skip_connection import SkipConnection, SoftGating
 from .integral_transform import IntegralTransform
 from .fno_block import FNOBlock, FNOBlock3D
-# from .wavelet_block import WaveletBlock1D, WaveletBlock2D
