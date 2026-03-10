@@ -100,12 +100,6 @@ where = ["src"]
 include = ["scirex*"]
 
 
-[tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-ra -q --cov=scirex"
-testpaths = [
-    "tests",
-]
 
 [tool.black]
 line-length = 88
