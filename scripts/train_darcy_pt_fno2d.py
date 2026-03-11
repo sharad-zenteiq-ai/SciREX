@@ -413,21 +413,25 @@ def main():
     with open(ckpt_path, "rb") as fp:
         best_params = flax.serialization.from_bytes(state.params, fp.read())
 
+    # Use actual loaded count — may be smaller than config.n_test
+    # if the .pt file contains fewer samples than requested.
+    n_test_actual = x_test.shape[0]
+
     # Full test-set predictions (decoded to physical units)
     y_pred_all = []
-    for i in range(0, config.n_test, config.batch_size):
+    for i in range(0, n_test_actual, config.batch_size):
         chunk = x_te[i : i + config.batch_size]
         p_enc = state.apply_fn({"params": best_params}, chunk)
         p_dec = y_norm.decode(p_enc) if y_norm else p_enc
         y_pred_all.append(np.array(p_dec))
-    y_pred_np = np.concatenate(y_pred_all, axis=0)   # (n_test, H, W, 1)
+    y_pred_np = np.concatenate(y_pred_all, axis=0)   # (n_test_actual, H, W, 1)
     y_test_np = np.array(y_test_jnp)
 
     # Final metrics
-    diff_all   = (y_pred_np - y_test_np).reshape(config.n_test, -1)
-    targ_all   = y_test_np.reshape(config.n_test, -1)
+    diff_all   = (y_pred_np - y_test_np).reshape(n_test_actual, -1)
+    targ_all   = y_test_np.reshape(n_test_actual, -1)
     rel_l2_all = np.linalg.norm(diff_all, axis=1) / (np.linalg.norm(targ_all, axis=1) + 1e-8)
-    print(f"Final test-set metrics (best checkpoint):")
+    print(f"Final test-set metrics (best checkpoint, {n_test_actual} samples):")
     print(f"  Mean Rel-L2  : {rel_l2_all.mean():.6f}")
     print(f"  Median Rel-L2: {np.median(rel_l2_all):.6f}")
     print(f"  Max Rel-L2   : {rel_l2_all.max():.6f}")
@@ -466,14 +470,15 @@ def main():
         os.path.join(results_dir, "error_histogram.png"),
     )
 
-    # (e) Multi-sample comparison (6 random samples)
+    # (e) Multi-sample comparison — cap at actual available samples
     np.random.seed(config.seed)
-    sample_ids = np.random.choice(config.n_test, size=6, replace=False)
+    n_plot     = min(6, n_test_actual)
+    sample_ids = np.random.choice(n_test_actual, size=n_plot, replace=False)
     plot_multi_sample_comparison(
         x_test[sample_ids],
         y_test_np[sample_ids],
         y_pred_np[sample_ids],
-        n_samples=6,
+        n_samples=n_plot,
         save_path=os.path.join(results_dir, "multi_sample_comparison.png"),
     )
 
