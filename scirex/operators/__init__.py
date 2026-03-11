@@ -24,8 +24,7 @@
 
 """
 `scirex.operators` provides the core neural operator architectures and their 
-constituent layers, including Fourier Neural Operators (FNO) and Wavelet 
-Neural Operators (WNO).
+constituents.
 """
 
 # ── Layers ──
@@ -39,11 +38,6 @@ from .layers import (
     SoftGating,
     FNOBlock,
     FNOBlock3D,
-    # WaveletConv1D,
-    # WaveletConv2D,
-    # WaveletBlock1D,
-    # WaveletBlock2D,
-    # LiftingWaveletConv2D,
     IntegralTransform,
 )
 
@@ -58,4 +52,3 @@ from .models.fno import FNO2D, FNO3D
 from . import data
 from . import losses
 from . import training
-# from . import config
