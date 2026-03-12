@@ -28,6 +28,8 @@ htmlcov/
 
 fastvpinns.egg-info/
 
+data/datasets/darcy 
+
 #ignore output files
 examples/**/output/
 examples/**/output_*

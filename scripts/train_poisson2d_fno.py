@@ -189,9 +189,15 @@ def main():
     # Paths
     ckpt_dir = os.path.join(project_root, "experiments/checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
+<<<<<<< HEAD
     ckpt_path = os.path.join(ckpt_dir, "poisson_fno_lploss_params.pkl")
 
     results_dir = os.path.join(project_root, "experiments/results/poisson2d_lpl`oss")
+=======
+    ckpt_path = os.path.join(ckpt_dir, "poisson2d_fno_params.pkl")
+
+    results_dir = os.path.join(project_root, "experiments/results/poisson2d_fno")
+>>>>>>> 34c69f2967ddf503afb7268be3c85f8b4df4b8d2
     os.makedirs(results_dir, exist_ok=True)
 
     best_rel_l2 = float("inf")
@@ -271,7 +277,11 @@ def main():
     plt.title('FNO 2D Poisson: Convergence')
     plt.grid(True, which="both", ls="-", alpha=0.5)
     plt.legend()
+<<<<<<< HEAD
     plt.savefig(os.path.join(results_dir, "poisson_fno_losses.png"), dpi=150)
+=======
+    plt.savefig(os.path.join(results_dir, "poisson2d_fno_losses.png"), dpi=150)
+>>>>>>> 34c69f2967ddf503afb7268be3c85f8b4df4b8d2
     print(f"Loss curves saved to: {results_dir}")
 
 if __name__ == "__main__":
