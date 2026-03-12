@@ -54,6 +54,8 @@ class DomainPadding(nn.Module):
             pad_list = [self.padding] * ndim
         else:
             pad_list = self.padding
+            if len(pad_list) != ndim:
+                raise ValueError(f"Length of padding list ({len(pad_list)}) must match number of spatial dimensions ({ndim}).")
 
         if not inverse:
             # Calculate pixel padding (symmetric)
