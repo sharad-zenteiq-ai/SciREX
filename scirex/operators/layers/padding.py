@@ -42,12 +42,7 @@ class DomainPadding(nn.Module):
     """
     padding: Union[float, List[float]]
     mode: str = 'constant'
-
-    def setup(self):
-        # Logic for calculating actual pixel padding will happen in __call__
-        # to handle dynamic input resolutions.
-        pass
-
+    
     def __call__(self, x: jnp.ndarray, inverse: bool = False, original_shape: Tuple = None) -> jnp.ndarray:
         """
         x: (batch, spatial_1, ..., spatial_n, channels)
