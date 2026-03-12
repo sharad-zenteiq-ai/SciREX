@@ -25,6 +25,8 @@ htmlcov/
 
 fastvpinns.egg-info/
 
+data/datasets/darcy 
+
 #ignore output files
 examples/**/output/
 examples/**/output_*
@@ -32,6 +34,21 @@ examples/**/__pycache__/
 
 output/*
 
+experiments/checkpoints
+experiments/results
+experiments/visualization/*
+!experiments/visualization/poisson2d_fno_plot.py
+!experiments/visualization/poisson3d_fno_plot.py
+
+experiments/darcy_wno/*
+
+scirex/operators/data/darcy/*
+scirex/operators/layers/wavelet/*
+scirex/operators/models/wno/*
+
+scirex/losses/tests/*
+
+scripts/darcy/*
 
 # pytest 
 *.vtk
@@ -79,3 +96,10 @@ examples/**/*.png
 output/
 
 results.png
+lib64
+
+
+# ignore .mat .py
+
+*.mat
+*.npy
