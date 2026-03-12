@@ -29,9 +29,9 @@ FNOBlock,..., etc.
 """
 
 from .channel_mlp import ChannelMLP
-from .spectral_conv import SpectralConv2D, SpectralConv3D
+from .spectral_conv import SpectralConv
 from .padding import DomainPadding
 from .embeddings import GridEmbedding
 from .skip_connection import SkipConnection, SoftGating
 from .integral_transform import IntegralTransform
-from .fno_block import FNOBlock, FNOBlock3D
+from .fno_block import FNOBlock

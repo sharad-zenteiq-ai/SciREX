@@ -64,7 +64,7 @@ import flax
 
 from flax import linen as nn
 
-from scirex.operators.models import FNO3D
+from scirex.operators.models import FNO
 from scirex.operators.training import create_train_state, GaussianNormalizer
 from scirex.operators.losses.data_losses import h1_loss, lp_loss, mse
 from configs.ns_fno3d_config import NSFNO3DConfig
@@ -223,7 +223,7 @@ def main():
         f"Initializing FNO3D (hidden_channels={config.hidden_channels}, "
         f"modes={config.n_modes}, layers={config.n_layers})..."
     )
-    model = FNO3D(
+    model = FNO(
         hidden_channels=config.hidden_channels,
         n_layers=config.n_layers,
         n_modes=config.n_modes,

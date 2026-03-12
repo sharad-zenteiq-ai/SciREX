@@ -1,4 +1,7 @@
-from scirex.operators.config import FNOConfig, FNO_Medium2D, FNO_Medium3D
+"""
+Test that config presets instantiate with expected defaults.
+"""
+from configs.models import FNOConfig, FNO_Medium2D, FNO_Medium3D
 
 def test_fno_config_defaults():
     config = FNOConfig()

@@ -22,19 +22,23 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
+"""
+Unit tests for the unified SpectralConv layer (supports 2D and 3D via n_modes).
+"""
+
 import jax
 import jax.numpy as jnp
 import pytest
-from scirex.operators.layers.spectral_conv import SpectralConv2D, SpectralConv3D
+from scirex.operators.layers.spectral_conv import SpectralConv
 
 @pytest.mark.parametrize("n_modes", [(4, 4), (8, 4)])
 @pytest.mark.parametrize("out_channels", [5, 10])
-def test_spectral_conv2d_shape(n_modes, out_channels):
-    """Test SpectralConv2D forward pass shape."""
+def test_spectral_conv_2d_shape(n_modes, out_channels):
+    """Test SpectralConv forward pass shape with 2D n_modes."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, in_channels = 2, 16, 16, 3
     
-    model = SpectralConv2D(in_channels=in_channels, out_channels=out_channels, n_modes=n_modes)
+    model = SpectralConv(in_channels=in_channels, out_channels=out_channels, n_modes=n_modes)
     x = jnp.ones((batch, nx, ny, in_channels))
     
     params = model.init(rng, x)
@@ -42,14 +46,14 @@ def test_spectral_conv2d_shape(n_modes, out_channels):
     
     assert y.shape == (batch, nx, ny, out_channels)
 
-def test_spectral_conv3d_shape():
-    """Test SpectralConv3D forward pass shape."""
+def test_spectral_conv_3d_shape():
+    """Test SpectralConv forward pass shape with 3D n_modes."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, nz, in_channels = 2, 8, 8, 8, 3
     out_channels = 5
     n_modes = (4, 4, 4)
     
-    model = SpectralConv3D(in_channels=in_channels, out_channels=out_channels, n_modes=n_modes)
+    model = SpectralConv(in_channels=in_channels, out_channels=out_channels, n_modes=n_modes)
     x = jnp.ones((batch, nx, ny, nz, in_channels))
     
     params = model.init(rng, x)
@@ -58,13 +62,13 @@ def test_spectral_conv3d_shape():
     assert y.shape == (batch, nx, ny, nz, out_channels)
 
 @pytest.mark.parametrize("nx, ny", [(16, 16), (32, 16), (16, 32)])
-def test_spectral_conv2d_various_resolutions(nx, ny):
-    """Test SpectralConv2D with different input resolutions."""
+def test_spectral_conv_2d_various_resolutions(nx, ny):
+    """Test SpectralConv with different input resolutions (2D)."""
     rng = jax.random.PRNGKey(0)
     batch, in_channels, out_channels = 2, 4, 4
     n_modes = (4, 4)
     
-    model = SpectralConv2D(in_channels=in_channels, out_channels=out_channels, n_modes=n_modes)
+    model = SpectralConv(in_channels=in_channels, out_channels=out_channels, n_modes=n_modes)
     x = jnp.ones((batch, nx, ny, in_channels))
     
     params = model.init(rng, x)

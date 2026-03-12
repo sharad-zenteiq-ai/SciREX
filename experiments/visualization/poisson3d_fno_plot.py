@@ -42,7 +42,7 @@ import flax
 from flax import linen as nn
 import json
 
-from scirex.operators.models.fno import FNO3D
+from scirex.operators.models.fno import FNO
 from scirex.operators.data import random_poisson_3d_batch
 from configs.poisson_fno_config import FNO3DConfig
 
@@ -211,8 +211,8 @@ def main():
     config = FNO3DConfig()
     
     # 2. Initialize Model (Consistent with training preset)
-    print(f"Initializing FNO3D model (hidden_channels={config.hidden_channels})...")
-    model = FNO3D(
+    print(f"Initializing FNO model (hidden_channels={config.hidden_channels})...")
+    model = FNO(
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 

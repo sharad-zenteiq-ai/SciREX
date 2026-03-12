@@ -27,7 +27,7 @@ import jax.numpy as jnp
 import pytest
 from flax.training.train_state import TrainState
 
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training.train_state import create_train_state
 
 
@@ -38,8 +38,8 @@ def rng():
 
 @pytest.fixture
 def simple_model():
-    """A minimal FNO2D model for testing."""
-    return FNO2D(
+    """A minimal FNO model for testing."""
+    return FNO(
         hidden_channels=8,
         n_layers=2,
         n_modes=(4, 4),

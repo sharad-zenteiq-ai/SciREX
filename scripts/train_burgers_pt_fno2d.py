@@ -93,7 +93,7 @@ from flax import linen as nn
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training import create_train_state, GaussianNormalizer
 from scirex.operators.losses import lp_loss
 from scirex.operators.data.burgers_pt import load_burgers_pt
@@ -361,7 +361,7 @@ def main():
     # ── 4. Model ──────────────────────────────────────────────────────────────
     print(f"Building FNO2D: modes={config.n_modes}  hidden={config.hidden_channels}"
           f"  layers={config.n_layers}  use_norm={config.use_norm}")
-    model = FNO2D(
+    model = FNO(
         hidden_channels=config.hidden_channels,
         n_layers=config.n_layers,
         n_modes=config.n_modes,

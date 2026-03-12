@@ -28,15 +28,21 @@ import jax.numpy as jnp
 from ..layers.channel_mlp import ChannelMLP
 from ..layers.embeddings import GridEmbedding
 from ..layers.padding import DomainPadding
-from ..layers.fno_block import FNOBlock, FNOBlock3D
+from ..layers.fno_block import FNOBlock
 
-class FNO2D(nn.Module):
+class FNO(nn.Module):
     """
-    Two-dimensional Fourier Neural Operator (FNO-2D).
+    N-dimensional Fourier Neural Operator (supports 2D and 3D).
     
-    FNO-2D learns operators between functional spaces by parameterized 
+    The spatial dimensionality is automatically inferred from the length of
+    ``n_modes``:
+      - ``len(n_modes) == 2`` → 2D FNO  (input shape: batch, nx, ny, channels)
+      - ``len(n_modes) == 3`` → 3D FNO  (input shape: batch, nx, ny, nz, channels)
+    
+    FNO learns operators between functional spaces by parameterized 
     integral kernels in the Fourier domain. This implementation aligns 
-    with standard architectures used in benchmarks like Darcy Flow and 2D Poisson.
+    with the standard architecture used in the original neuraloperator
+    repository.
     
     The architecture follows a lifting-operator-projection pipeline:
     [Input] -> Lifting (ChannelMLP) -> Iterative FNOBlocks -> Projection (ChannelMLP) -> [Output]
@@ -44,7 +50,8 @@ class FNO2D(nn.Module):
     Attributes:
         hidden_channels (int): Width of the latent spectral representation.
         n_layers (int): Number of stacked FNO blocks.
-        n_modes (Tuple[int, int]): Fourier modes to retain.
+        n_modes (Tuple[int, ...]): Fourier modes to retain per spatial dimension.
+            Length determines 2D vs 3D.
         out_channels (int): Dimensionality of the output field.
         lifting_channel_ratio (int): Expansion factor for the lifting layer.
         projection_channel_ratio (int): Expansion factor for the projection layer.
@@ -58,7 +65,7 @@ class FNO2D(nn.Module):
     """
     hidden_channels: int
     n_layers: int
-    n_modes: Tuple[int, int]
+    n_modes: Tuple[int, ...]
     out_channels: int
     lifting_channel_ratio: int = 2
     projection_channel_ratio: int = 2
@@ -76,11 +83,15 @@ class FNO2D(nn.Module):
         Executes the forward pass.
         
         Args:
-            x (jnp.ndarray): Input tensor of shape (batch, nx, ny, in_channels).
+            x (jnp.ndarray): Input tensor.
+                - 2D: shape (batch, nx, ny, in_channels)
+                - 3D: shape (batch, nx, ny, nz, in_channels)
             
         Returns:
-            jnp.ndarray: Predicted field of shape (batch, nx, ny, out_channels).
+            jnp.ndarray: Predicted field with the same spatial dimensions
+            and ``out_channels`` as the last dimension.
         """
+        n_dim = len(self.n_modes)
         original_shape = x.shape
         
         # Check if padding is needed (handles both float and list)
@@ -92,7 +103,8 @@ class FNO2D(nn.Module):
         
         # 1. Positional Embedding (Grid)
         if self.use_grid:
-            x = GridEmbedding(grid_boundaries=((0.0, 1.0), (0.0, 1.0)))(x)
+            grid_boundaries = tuple((0.0, 1.0) for _ in range(n_dim))
+            x = GridEmbedding(grid_boundaries=grid_boundaries)(x)
             
         # 2. Domain Padding (to handle non-periodic conditions)
         if needs_pad:
@@ -138,84 +150,3 @@ class FNO2D(nn.Module):
         
         return x
 
-class FNO3D(nn.Module):
-    """
-    Three-dimensional Fourier Neural Operator (FNO-3D).
-    
-    Standard architecture for learning operators on 3D volumetric data or 
-    2D+Time spatio-temporal dynamics. This implementation includes 
-    optimizations like domain padding and normalization to handle 
-    computational complexity and provide better convergence.
-    """
-    hidden_channels: int
-    n_layers: int
-    n_modes: Tuple[int, int, int]
-    out_channels: int
-    lifting_channel_ratio: int = 2
-    projection_channel_ratio: int = 2
-    use_grid: bool = True
-    fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
-    channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
-    use_channel_mlp: bool = True
-    padding: Union[float, List[float]] = 0.0
-    use_norm: bool = True
-    activation: Callable = nn.gelu
-
-    @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        """
-        x: (batch, nx, ny, nz, in_channels)
-        """
-        original_shape = x.shape
-        
-        # Check if padding is needed (handles both float and list)
-        needs_pad = (
-            any(p > 0 for p in self.padding)
-            if isinstance(self.padding, (list, tuple))
-            else self.padding > 0
-        )
-        
-        # 1. Positional Embedding (Grid)
-        if self.use_grid:
-            x = GridEmbedding(grid_boundaries=((0.0, 1.0), (0.0, 1.0), (0.0, 1.0)))(x)
-            
-        # 2. Domain Padding (to handle non-periodic conditions)
-        if needs_pad:
-            pad_layer = DomainPadding(padding=self.padding)
-            x = pad_layer(x)
-            
-        # 3. Lifting: encoder MLP -> project to hidden_channels
-        lifting_hidden = self.hidden_channels * self.lifting_channel_ratio
-        x = ChannelMLP(
-            out_channels=self.hidden_channels,
-            hidden_channels=lifting_hidden,
-            n_layers=2,
-            activation=self.activation
-        )(x)
-        
-        # 4. Iterative FNO blocks
-        for _ in range(self.n_layers):
-            x = FNOBlock3D(
-                hidden_channels=self.hidden_channels, 
-                n_modes=self.n_modes,
-                activation=self.activation,
-                use_norm=self.use_norm,
-                skip_type=self.fno_skip,
-                channel_mlp_skip=self.channel_mlp_skip,
-                use_channel_mlp=self.use_channel_mlp
-            )(x)
-            
-        # 5. Projection: decoder MLP -> project to desired output channels
-        projection_hidden = self.hidden_channels * self.projection_channel_ratio
-        x = ChannelMLP(
-            out_channels=self.out_channels, 
-            hidden_channels=projection_hidden,
-            n_layers=2,
-            activation=self.activation
-        )(x)
-        
-        # 6. Inverse Domain Padding (Crop)
-        if needs_pad:
-            x = pad_layer(x, inverse=True, original_shape=original_shape)
-            
-        return x

@@ -44,7 +44,7 @@ Usage
     from configs.models import FNO_Small2D
 
     cfg = FNO_Small2D()
-    model = FNO2D(
+    model = FNO(
         hidden_channels=cfg.hidden_channels,
         n_layers=cfg.n_layers,
         n_modes=cfg.n_modes,
@@ -102,7 +102,7 @@ class FNOConfig(ModelConfig):
         Whether to use a channel MLP refinement in each block.
     domain_padding : float
         Fraction of zero-padding applied via ``DomainPadding``.
-        Used by both ``FNO2D`` and ``FNO3D``.
+        Used by the unified ``FNO`` model.
     use_norm : bool
         Whether to apply instance normalization inside each
         ``FNOBlock``.

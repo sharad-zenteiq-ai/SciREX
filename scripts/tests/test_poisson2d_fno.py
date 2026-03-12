@@ -24,7 +24,7 @@
 
 import jax
 import jax.numpy as jnp
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training.train_state import create_train_state
 from scirex.operators.training.step_fns import train_step
 from scirex.operators.losses.data_losses import lp_loss
@@ -32,7 +32,7 @@ from scirex.operators.data.poisson import random_poisson_2d_batch
 
 def test_fno2d_poisson():
     """
-    End-to-end integration test: verifies if FNO2D can learn 
+    End-to-end integration test: verifies if FNO can learn 
     from a small batch of 2D Poisson data using the standard pipeline.
     """
     rng = jax.random.PRNGKey(42)
@@ -57,7 +57,7 @@ def test_fno2d_poisson():
     }
     
     # 2. Initialize Model
-    model = FNO2D(
+    model = FNO(
         hidden_channels=hidden_channels,
         n_layers=n_layers,
         n_modes=n_modes,

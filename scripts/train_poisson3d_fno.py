@@ -51,7 +51,7 @@ import time
 import matplotlib.pyplot as plt
 import json
 
-from scirex.operators.models.fno import FNO3D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training import create_train_state, TrainState
 from scirex.operators.losses import lp_loss
 from scirex.operators.data import random_poisson_3d_batch
@@ -128,8 +128,8 @@ def main():
     rng, init_rng = jax.random.split(rng)
     
     # 2. Initialize Model
-    print(f"Initializing FNO3D (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
-    model = FNO3D(
+    print(f"Initializing FNO (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
+    model = FNO(
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 

@@ -23,16 +23,18 @@
 # please contact: contact@scirex.org
 
 """
-Unit test for forward pass shape of the FNO2D model.
+Unit tests for the unified FNOBlock and FNO model forward pass shapes.
+Dimensionality is inferred from len(n_modes) — no separate FNOBlock3D / FNO2D.
 """
+
 import jax
 import jax.numpy as jnp
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training.train_state import create_train_state
-from scirex.operators.layers.fno_block import FNOBlock, FNOBlock3D
+from scirex.operators.layers.fno_block import FNOBlock
 
-def test_fno_block_shape():
-    """Test 2D FNOBlock forward pass shape."""
+def test_fno_block_2d_shape():
+    """Test FNOBlock forward pass shape with 2D n_modes."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, channels = 2, 16, 16, 32
     n_modes = (8, 8)
@@ -46,12 +48,12 @@ def test_fno_block_shape():
     assert y.shape == (batch, nx, ny, channels)
 
 def test_fno_block_3d_shape():
-    """Test 3D FNOBlock forward pass shape."""
+    """Test FNOBlock forward pass shape with 3D n_modes."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, nz, channels = 2, 8, 8, 8, 16
     n_modes = (4, 4, 4)
     
-    model = FNOBlock3D(hidden_channels=channels, n_modes=n_modes)
+    model = FNOBlock(hidden_channels=channels, n_modes=n_modes)
     x = jnp.ones((batch, nx, ny, nz, channels))
     
     params = model.init(rng, x)
@@ -79,7 +81,8 @@ def test_fno_block_configs():
     
     assert y.shape == (batch, nx, ny, channels)
 
-def test_forward_shape():
+def test_fno_forward_2d_shape():
+    """Test unified FNO model forward pass shape with 2D n_modes."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, in_channels = 2, 16, 16, 1
     hidden_channels = 16
@@ -87,7 +90,7 @@ def test_forward_shape():
     n_modes = (6, 6)
     out_channels = 1
 
-    model = FNO2D(
+    model = FNO(
         hidden_channels=hidden_channels, 
         n_layers=n_layers, 
         n_modes=n_modes, 
@@ -98,7 +101,7 @@ def test_forward_shape():
     
     preds = state.apply_fn({"params": state.params}, x)
     assert preds.shape == (batch, nx, ny, out_channels)
-    print("test_forward_shape OK:", preds.shape)
+    print("test_fno_forward_2d_shape OK:", preds.shape)
 
 if __name__ == "__main__":
-    test_forward_shape()
+    test_fno_forward_2d_shape()

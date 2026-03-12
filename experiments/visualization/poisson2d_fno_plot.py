@@ -42,9 +42,9 @@ import flax
 from flax import linen as nn
 import json
 
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training import create_train_state
-from scirex.operators.data import generator as poisson_generator
+from scirex.operators.data import random_poisson_batch
 from configs.poisson_fno_config import FNO2DConfig
 
 class UnitGaussianNormalizer:
@@ -64,8 +64,8 @@ def main():
     config = FNO2DConfig()
     
     # 2. Initialize Model (Consistent with training preset)
-    print(f"Initializing FNO2D model...")
-    model = FNO2D(
+    print(f"Initializing FNO model...")
+    model = FNO(
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 

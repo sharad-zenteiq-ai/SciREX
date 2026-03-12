@@ -46,11 +46,10 @@ import time
 import matplotlib.pyplot as plt
 import json
 
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training import create_train_state, TrainState
-from scirex.training import train_step, eval_step
 from scirex.operators.losses import mse, lp_loss
-from scirex.operators.data import generator as poisson_generator
+from scirex.operators.data import random_poisson_batch
 from configs.poisson_fno_config import FNO2DConfig
 
 
@@ -120,8 +119,8 @@ def main():
     
     # 2. Initialize Model
     # Using config values directly for better accuracy
-    print(f"Initializing FNO2D (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
-    model = FNO2D(
+    print(f"Initializing FNO (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
+    model = FNO(
         hidden_channels=config.hidden_channels, 
         n_layers=config.n_layers, 
         n_modes=config.n_modes, 

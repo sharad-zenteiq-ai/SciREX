@@ -26,7 +26,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training.train_state import create_train_state
 from scirex.operators.training.step_fns import train_step, eval_step
 
@@ -38,8 +38,8 @@ def rng():
 
 @pytest.fixture
 def model_and_state(rng):
-    """Create a small FNO2D model and its TrainState."""
-    model = FNO2D(
+    """Create a small FNO model and its TrainState."""
+    model = FNO(
         hidden_channels=8,
         n_layers=2,
         n_modes=(4, 4),

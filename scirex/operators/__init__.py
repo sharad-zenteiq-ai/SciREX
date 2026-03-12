@@ -30,23 +30,18 @@ constituents.
 # ── Layers ──
 from .layers import (
     ChannelMLP,
-    SpectralConv2D,
-    SpectralConv3D,
+    SpectralConv,
     DomainPadding,
     GridEmbedding,
     SkipConnection,
     SoftGating,
     FNOBlock,
-    FNOBlock3D,
     IntegralTransform,
 )
 
 # ── Models ──
-from .models.fno import FNO2D, FNO3D
+from .models.fno import FNO
 # from .models.wno.wno import WNO1D, WNO2D, FWNO2D
-
-# ── GNO / Future Layers ──
-# from .layers.integral_transform import IntegralTransform
 
 # ── Data, Losses, Training ──
 from . import data

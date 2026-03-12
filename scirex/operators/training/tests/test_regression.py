@@ -25,18 +25,18 @@
 import jax
 import jax.numpy as jnp
 import optax
-from scirex.operators.models.fno import FNO2D
+from scirex.operators.models.fno import FNO
 from scirex.operators.training.train_state import create_train_state
 
-def test_fno2d_overfit_toy():
-    """Regression test: Check if FNO2D can overfit a single toy sample."""
+def test_fno_overfit_toy():
+    """Regression test: Check if FNO can overfit a single toy sample."""
     rng = jax.random.PRNGKey(0)
     batch, nx, ny, in_channels = 1, 16, 16, 1
     hidden_channels, n_layers = 16, 2
     n_modes = (4, 4)
     out_channels = 1
     
-    model = FNO2D(
+    model = FNO(
         hidden_channels=hidden_channels, 
         n_layers=n_layers, 
         n_modes=n_modes, 
