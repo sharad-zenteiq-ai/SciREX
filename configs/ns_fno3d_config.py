@@ -133,7 +133,7 @@ class NSFNO3DConfig:
     learning_rate: float = 3e-4
     weight_decay: float = 1e-4
     batch_size: int = 8
-    epochs: int = 100
+    epochs: int = 500
     seed: int = 42
 
     # ── LR Scheduler ──

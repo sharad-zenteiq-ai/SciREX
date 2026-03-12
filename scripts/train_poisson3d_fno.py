@@ -226,6 +226,8 @@ def main():
     print(f"Starting training for {config.epochs} epochs ({total_steps} steps)...")
     rng_key = jax.random.PRNGKey(config.seed + 1)
     
+    
+    _total_start_time = time.time()
     for epoch in range(config.epochs):
         epoch_start_time = time.time()
         epoch_loss = 0.0
@@ -279,7 +281,10 @@ def main():
             with open(os.path.join(results_dir, "fno3d_metrics.json"), "w") as f:
                 json.dump(history, f, indent=4)
 
+    _total_end_time = time.time()
+    total_time = _total_end_time - _total_start_time
     print("\nTraining Complete.")
+    print(f"Total training time: {total_time:.2f}s ({total_time/60:.2f}m)")
     print(f"Best Test Relative L2 Error: {best_rel_l2:.6f}")
     print(f"Checkpoint saved to: {ckpt_path}")
 

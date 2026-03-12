@@ -270,6 +270,8 @@ def main():
     num_test = test_x.shape[0]
     best_test_loss = float('inf')
     
+    
+    _total_start_time = time.time()
     for epoch in range(1, config.epochs + 1):
         # Shuffle
         idx = np.random.permutation(num_train)
@@ -318,7 +320,10 @@ def main():
             print(f"[{epoch}] time={epoch_time:.2f}, avg_loss={avg_loss:.4f}, train_err={train_err_avg:.4f}")
             print(f"Eval: 64_h1={test_h1_avg:.4f}, 64_l2={test_l2_avg:.4f}")
 
+    _total_end_time = time.time()
+    total_time = _total_end_time - _total_start_time
     print(f"\nTraining finished. Best Test L2: {best_test_loss:.6f}")
+    print(f"Total training time: {total_time:.2f}s ({total_time/60:.2f}m)")
 
     # 5. Save checkpoint
     os.makedirs(config.checkpoint_dir, exist_ok=True)

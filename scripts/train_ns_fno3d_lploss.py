@@ -279,7 +279,8 @@ def main():
     best_test_l2 = float("inf")
     history = {"train_rel_l2": [], "test_rel_l2": [], "test_h1": []}
     rng_key = jax.random.PRNGKey(config.seed + 1)
-
+    
+    _total_start_time = time.time()
     for epoch in range(1, config.epochs + 1):
         # Shuffle training data
         rng_key, shuffle_key = jax.random.split(rng_key)
@@ -343,7 +344,10 @@ def main():
             with open(os.path.join(results_dir, "ns_fno3d_metrics.json"), "w") as f:
                 json.dump(history, f, indent=4)
 
+    _total_end_time = time.time()
+    total_time = _total_end_time - _total_start_time
     print(f"\nTraining finished. Best Test Rel L2: {best_test_l2:.6f}")
+    print(f"Total training time: {total_time:.2f}s ({total_time/60:.2f}m)")
 
     # ── 8. Save final metrics ──
     with open(os.path.join(results_dir, "ns_fno3d_metrics.json"), "w") as f:
