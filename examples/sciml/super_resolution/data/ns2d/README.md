@@ -1,0 +1,4 @@
+The dataset was generated using a high-fidelity numerical solver for the 2D Navier-Stokes equations in vorticity-streamfunction form. The flow was simulated on a high-resolution grid of $1024 \times 1024$. The simulation utilized a viscosity parameter of $\nu = 10^{-3}$ and a time step of $\Delta t = 10^{-4}$. The initial vorticity fields were sampled from a Gaussian Random Field (GRF). The flow was driven by a deterministic sinusoidal forcing term: $f(x,y) = 0.1(\sin(2\pi(x+y)) + \cos(2\pi(x+y)))$. To construct the super-resolution dataset, the ground truth ($1024 \times 1024$) simulations were downsampled.
+
+This script is written by ixScience and can be found here 
+https://github.com/ixScience/fourier_neural_operator/blob/master/data_generation/navier_stokes/ns_2d.py

@@ -1,0 +1,1 @@
+The dataset provided for this challenge consists of pairs of low-resolution and high-resolution 2D slices of 3D direct numerical simulation data. These flowfields are represented as 4 channels (density, and 3 velocity components).
