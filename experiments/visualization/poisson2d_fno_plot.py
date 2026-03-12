@@ -43,21 +43,9 @@ from flax import linen as nn
 import json
 
 from scirex.operators.models.fno import FNO
-from scirex.operators.training import create_train_state
+from scirex.operators.training import create_train_state, GaussianNormalizer
 from scirex.operators.data import random_poisson_batch
 from configs.poisson_fno_config import FNO2DConfig
-
-class UnitGaussianNormalizer:
-    def __init__(self, x, eps=1e-5):
-        self.mean = jnp.mean(x, axis=(0, 1, 2), keepdims=True)
-        self.std = jnp.std(x, axis=(0, 1, 2), keepdims=True)
-        self.eps = eps
-
-    def encode(self, x):
-        return (x - self.mean) / (self.std + self.eps)
-
-    def decode(self, x):
-        return x * (self.std + self.eps) + self.mean
 
 def main():
     # 1. Load Configuration
@@ -82,7 +70,7 @@ def main():
     )
     
     # 3. Load Checkpoint
-    ckpt_path = os.path.join(project_root, "experiments/checkpoints/poisson_fno_lploss_params.pkl")
+    ckpt_path = os.path.join(project_root, "experiments/checkpoints/poisson2d_fno_params.pkl")
     if not os.path.exists(ckpt_path):
         print(f"Error: Checkpoint not found at {ckpt_path}")
         return
@@ -112,8 +100,8 @@ def main():
     f_train_ref, u_train_ref = random_poisson_batch(
         batch_size=config.n_train, nx=nx, ny=ny, channels=1, rng_seed=config.seed
     )
-    x_normalizer = UnitGaussianNormalizer(f_train_ref)
-    y_normalizer = UnitGaussianNormalizer(u_train_ref)
+    x_normalizer = GaussianNormalizer(f_train_ref)
+    y_normalizer = GaussianNormalizer(u_train_ref)
 
     # Generate Test Data (different seed)
     f_test, u_test = random_poisson_batch(
@@ -130,7 +118,7 @@ def main():
     print(f"FNO prediction u stats: min={u_pred.min():.4f}, max={u_pred.max():.4f}, mean={u_pred.mean():.4f}")
     
     # 6. Plotting Field Comparisons (Only 2D Squares)
-    plot_dir = os.path.join(project_root, "experiments/results/poisson2d_lploss")
+    plot_dir = os.path.join(project_root, "experiments/results/poisson2d_fno")
     os.makedirs(plot_dir, exist_ok=True)
     
     num_plots = min(3, f_test.shape[0])
@@ -173,10 +161,9 @@ def main():
         ax.axis('off')
 
     plt.tight_layout()
-    save_path = os.path.join(plot_dir, "poisson_fno_comparison.png")
+    save_path = os.path.join(plot_dir, "poisson2d_fno_fields.png")
     plt.savefig(save_path, dpi=150)
-    print(f"Comparison plots saved to {save_path}")
-    print("Loss plotting skipped as requested.")
+    print(f"Fields plots saved to {save_path}")
 
 if __name__ == "__main__":
     main()

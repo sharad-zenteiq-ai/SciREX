@@ -40,10 +40,15 @@ from configs.models import (  # noqa: F401
 
 # ── Experiment configs ──
 from configs.poisson_fno_config import FNO2DConfig, FNO3DConfig  # noqa: F401
-from configs.ns_fno3d_config import (
-    NSFNO3DConfig,
-    NSFNO3D_Small,
-    NSFNO3D_Medium,
-    NSFNO3D_Large,
-    NSFNO3D_Huge,
-)  # noqa: F401
+
+try:
+    from configs.ns_fno3d_config import (  # noqa: F401
+        NSFNO3DConfig,
+        NSFNO3D_Small,
+        NSFNO3D_Medium,
+        NSFNO3D_Large,
+        NSFNO3D_Huge,
+    )
+except ModuleNotFoundError:
+    pass
+
