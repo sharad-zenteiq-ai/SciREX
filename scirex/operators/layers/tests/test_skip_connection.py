@@ -23,44 +23,40 @@
 # please contact: contact@scirex.org
 
 """
-Unit tests for FNOBlock.
+Unit tests for SkipConnection and SoftGating.
 
-Tests are written in N-D style to ensure the block works
-for arbitrary spatial dimensionalities.
+Tests are written in N-D style so the modules work for
+arbitrary spatial dimensions.
 """
 
 import jax
 import jax.numpy as jnp
 import pytest
 
-from scirex.operators.layers.fno_block import FNOBlock
+from scirex.operators.layers.skip_connection import SoftGating, SkipConnection
 
 
-
-# Basic forward pass (N-D)
+# SoftGating
 
 @pytest.mark.parametrize(
-    "spatial_shape,n_modes",
+    "spatial_shape",
     [
-        ((16, 16), (6, 6)),       # 2D
-        ((8, 8, 8), (4, 4, 4)),   # 3D
+        (16, 16),        # 2D
+        (8, 8, 8),       # 3D
     ],
 )
 
-def test_fno_block_forward_nd(spatial_shape, n_modes):
-    """FNOBlock should preserve spatial shape."""
+def test_soft_gating_nd(spatial_shape):
+    """SoftGating should preserve tensor shape."""
 
     rng = jax.random.PRNGKey(0)
 
     batch = 2
-    channels = 16
+    channels = 6
 
     x = jnp.ones((batch, *spatial_shape, channels))
 
-    model = FNOBlock(
-        hidden_channels=channels,
-        n_modes=n_modes,
-    )
+    model = SoftGating(in_channels=channels)
 
     params = model.init(rng, x)
     y = model.apply(params, x)
@@ -68,96 +64,101 @@ def test_fno_block_forward_nd(spatial_shape, n_modes):
     assert y.shape == x.shape
 
 
-# With normalization
+# SkipConnection identity
 
 @pytest.mark.parametrize(
-    "spatial_shape,n_modes",
+    "spatial_shape",
     [
-        ((12, 12), (5, 5)),
-        ((6, 6, 6), (3, 3, 3)),
+        (12, 12),
+        (6, 6, 6),
     ],
 )
 
-def test_fno_block_with_norm(spatial_shape, n_modes):
-    """FNOBlock should run when normalization is enabled."""
+def test_skip_connection_identity(spatial_shape):
+    """Identity skip should return the input unchanged."""
 
     rng = jax.random.PRNGKey(0)
 
     batch = 2
-    channels = 8
+    channels = 5
 
     x = jnp.ones((batch, *spatial_shape, channels))
 
-    model = FNOBlock(
-        hidden_channels=channels,
-        n_modes=n_modes,
-        use_norm=True,
-    )
+    model = SkipConnection(out_channels=channels, skip_type="identity")
 
     params = model.init(rng, x)
     y = model.apply(params, x)
 
     assert y.shape == x.shape
+    assert jnp.allclose(y, x)
 
 
-# Without ChannelMLP refinement
+# SkipConnection linear
 
 @pytest.mark.parametrize(
-    "spatial_shape,n_modes",
+    "spatial_shape",
     [
-        ((14, 14), (6, 6)),
-        ((6, 6, 6), (3, 3, 3)),
+        (16, 16),
+        (8, 8, 8),
     ],
 )
 
-def test_fno_block_without_channel_mlp(spatial_shape, n_modes):
-    """FNOBlock should run when ChannelMLP is disabled."""
+def test_skip_connection_linear(spatial_shape):
+    """Linear skip should project channels."""
 
     rng = jax.random.PRNGKey(0)
 
     batch = 2
-    channels = 12
+    in_channels = 4
+    out_channels = 10
 
-    x = jnp.ones((batch, *spatial_shape, channels))
+    x = jnp.ones((batch, *spatial_shape, in_channels))
 
-    model = FNOBlock(
-        hidden_channels=channels,
-        n_modes=n_modes,
-        use_channel_mlp=False,
-    )
+    model = SkipConnection(out_channels=out_channels, skip_type="linear")
 
     params = model.init(rng, x)
     y = model.apply(params, x)
 
-    assert y.shape == x.shape
+    assert y.shape == (batch, *spatial_shape, out_channels)
 
 
-
-# Different skip connection types
+# SkipConnection soft-gating
 
 @pytest.mark.parametrize(
-    "skip_type",
-    ["identity", "linear", "soft-gating"],
+    "spatial_shape",
+    [
+        (14, 14),
+        (6, 6, 6),
+    ],
 )
 
-def test_fno_block_skip_types(skip_type):
-    """FNOBlock should support all skip connection types."""
+def test_skip_connection_soft_gating(spatial_shape):
+    """Soft-gating skip should preserve shape."""
 
     rng = jax.random.PRNGKey(0)
 
     batch = 2
-    spatial_shape = (16, 16)
-    channels = 10
+    channels = 7
 
     x = jnp.ones((batch, *spatial_shape, channels))
 
-    model = FNOBlock(
-        hidden_channels=channels,
-        n_modes=(6, 6),
-        skip_type=skip_type,
-    )
+    model = SkipConnection(out_channels=channels, skip_type="soft-gating")
 
     params = model.init(rng, x)
     y = model.apply(params, x)
 
     assert y.shape == x.shape
+
+
+# Invalid skip type
+
+def test_skip_connection_invalid_type():
+    """Invalid skip type should raise ValueError."""
+
+    x = jnp.ones((2, 16, 16, 4))
+
+    model = SkipConnection(out_channels=4, skip_type="invalid")
+
+    with pytest.raises(ValueError):
+        params = model.init(jax.random.PRNGKey(0), x)
+        model.apply(params, x)

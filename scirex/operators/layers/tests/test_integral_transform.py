@@ -23,7 +23,7 @@
 # please contact: contact@scirex.org
 
 """
-Unit tests for SpectralConv.
+Unit tests for IntegralTransform.
 
 Tests are written in N-D style so the layer works for
 arbitrary spatial dimensionalities.
@@ -33,96 +33,90 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from scirex.operators.layers.spectral_conv import SpectralConv
+from scirex.operators.layers.integral_transform import IntegralTransform
 
 
-# Forward pass N-D
+# Forward pass without f_y
 
 @pytest.mark.parametrize(
-    "spatial_shape,n_modes",
+    "spatial_shape",
     [
-        ((16, 16), (6, 6)),       # 2D
-        ((8, 8, 8), (4, 4, 4)),   # 3D
+        (16, 16),        # 2D
+        (8, 8, 8),       # 3D
     ],
 )
 
-def test_spectral_conv_forward_nd(spatial_shape, n_modes):
-    """SpectralConv should preserve spatial dimensions."""
+def test_integral_transform_forward_nd(spatial_shape):
+    """IntegralTransform should run and preserve spatial shape."""
 
     rng = jax.random.PRNGKey(0)
 
     batch = 2
     in_channels = 4
-    out_channels = 6
+    channels = 6
 
     x = jnp.ones((batch, *spatial_shape, in_channels))
 
-    model = SpectralConv(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        n_modes=n_modes,
-    )
+    model = IntegralTransform(channels=channels)
 
     params = model.init(rng, x)
     y = model.apply(params, x)
 
-    assert y.shape == (batch, *spatial_shape, out_channels)
+    assert y.shape == (batch, *spatial_shape, channels)
+
+
+# Forward pass with f_y
+
+@pytest.mark.parametrize(
+    "spatial_shape",
+    [
+        (12, 12),
+        (6, 6, 6),
+    ],
+)
+
+def test_integral_transform_with_fy(spatial_shape):
+    """IntegralTransform should handle f_y branch."""
+
+    rng = jax.random.PRNGKey(0)
+
+    batch = 2
+    in_channels = 5
+    channels = 7
+
+    x = jnp.ones((batch, *spatial_shape, in_channels))
+    f_y = jnp.ones((batch, *spatial_shape, channels))
+
+    model = IntegralTransform(channels=channels)
+
+    params = model.init(rng, x)
+
+    y = model.apply(params, x, f_y=f_y)
+
+    assert y.shape == (batch, *spatial_shape, channels)
 
 
 # Different channel configurations
 
 @pytest.mark.parametrize(
-    "in_channels,out_channels",
-    [
-        (3, 5),
-        (6, 8),
-    ],
+    "channels",
+    [4, 8, 12],
 )
 
-def test_spectral_conv_channel_variations(in_channels, out_channels):
-    """SpectralConv should handle different channel sizes."""
+def test_integral_transform_channel_variations(channels):
+    """IntegralTransform should support different channel sizes."""
 
     rng = jax.random.PRNGKey(0)
 
     batch = 2
     spatial_shape = (16, 16)
+    in_channels = 3
 
     x = jnp.ones((batch, *spatial_shape, in_channels))
 
-    model = SpectralConv(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        n_modes=(6, 6),
-    )
+    model = IntegralTransform(channels=channels)
 
     params = model.init(rng, x)
     y = model.apply(params, x)
 
-    assert y.shape == (batch, *spatial_shape, out_channels)
-
-
-# Custom initialization std
-
-def test_spectral_conv_custom_init_std():
-    """SpectralConv should work with custom initialization scale."""
-
-    rng = jax.random.PRNGKey(0)
-
-    batch = 2
-    spatial_shape = (12, 12)
-    in_channels = 4
-    out_channels = 4
-
-    x = jnp.ones((batch, *spatial_shape, in_channels))
-
-    model = SpectralConv(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        n_modes=(5, 5),
-        init_std=0.1,
-    )
-
-    params = model.init(rng, x)
-    y = model.apply(params, x)
-
-    assert y.shape == x.shape
+    assert y.shape == (batch, *spatial_shape, channels)

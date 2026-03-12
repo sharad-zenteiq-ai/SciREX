@@ -23,106 +23,140 @@
 # please contact: contact@scirex.org
 
 """
-Unit tests for SpectralConv.
-
-Tests are written in N-D style so the layer works for
-arbitrary spatial dimensionalities.
+Unit tests for ChannelMLP and LinearChannelMLP layers.
+Tests are dimension-agnostic (N-D spatial inputs).
 """
 
 import jax
 import jax.numpy as jnp
 import pytest
 
-from scirex.operators.layers.spectral_conv import SpectralConv
+from scirex.operators.layers.channel_mlp import ChannelMLP, LinearChannelMLP
 
-
-# Forward pass N-D
 
 @pytest.mark.parametrize(
-    "spatial_shape,n_modes",
+    "spatial_shape",
     [
-        ((16, 16), (6, 6)),       # 2D
-        ((8, 8, 8), (4, 4, 4)),   # 3D
+        (16, 16),          # 2D
+        (8, 8, 8),         # 3D
+        (4, 4, 4, 4),      # 4D
     ],
 )
-
-def test_spectral_conv_forward_nd(spatial_shape, n_modes):
-    """SpectralConv should preserve spatial dimensions."""
-
+def test_channel_mlp_forward_nd(spatial_shape):
+    """Test ChannelMLP forward pass for N-D spatial inputs."""
+    
     rng = jax.random.PRNGKey(0)
 
     batch = 2
     in_channels = 4
+    out_channels = 8
+
+    x = jnp.ones((batch, *spatial_shape, in_channels))
+
+    model = ChannelMLP(
+        out_channels=out_channels,
+        hidden_channels=16,
+        n_layers=3,
+        dropout_rate=0.0,
+    )
+
+    params = model.init(rng, x)
+    y = model.apply(params, x)
+
+    assert y.shape == (batch, *spatial_shape, out_channels)
+
+
+@pytest.mark.parametrize(
+    "spatial_shape",
+    [
+        (12, 12),
+        (6, 6, 6),
+    ],
+)
+
+def test_channel_mlp_default_hidden(spatial_shape):
+    """Test ChannelMLP when hidden_channels is None."""
+    
+    rng = jax.random.PRNGKey(0)
+
+    batch = 2
+    in_channels = 5
+    out_channels = 10
+
+    x = jnp.ones((batch, *spatial_shape, in_channels))
+
+    model = ChannelMLP(
+        out_channels=out_channels,
+        hidden_channels=None,
+        n_layers=2,
+    )
+
+    params = model.init(rng, x)
+    y = model.apply(params, x)
+
+    assert y.shape == (batch, *spatial_shape, out_channels)
+
+
+@pytest.mark.parametrize(
+    "spatial_shape",
+    [
+        (10, 10),
+        (6, 6, 6),
+    ],
+)
+
+def test_channel_mlp_with_dropout(spatial_shape):
+    """Test ChannelMLP with dropout enabled."""
+    
+    rng = jax.random.PRNGKey(0)
+
+    batch = 2
+    in_channels = 3
     out_channels = 6
 
     x = jnp.ones((batch, *spatial_shape, in_channels))
 
-    model = SpectralConv(
-        in_channels=in_channels,
+    model = ChannelMLP(
         out_channels=out_channels,
-        n_modes=n_modes,
+        hidden_channels=12,
+        n_layers=2,
+        dropout_rate=0.5,
     )
 
-    params = model.init(rng, x)
-    y = model.apply(params, x)
+    params = model.init({"params": rng, "dropout": rng}, x)
+
+    y = model.apply(
+        params,
+        x,
+        deterministic=True,
+        rngs={"dropout": rng},
+    )
 
     assert y.shape == (batch, *spatial_shape, out_channels)
 
 
-# Different channel configurations
-
 @pytest.mark.parametrize(
-    "in_channels,out_channels",
+    "spatial_shape",
     [
-        (3, 5),
-        (6, 8),
+        (16, 16),
+        (8, 8, 8),
     ],
 )
 
-def test_spectral_conv_channel_variations(in_channels, out_channels):
-    """SpectralConv should handle different channel sizes."""
-
+def test_linear_channel_mlp_forward_nd(spatial_shape):
+    """Test LinearChannelMLP forward pass for N-D spatial inputs."""
+    
     rng = jax.random.PRNGKey(0)
 
     batch = 2
-    spatial_shape = (16, 16)
-
-    x = jnp.ones((batch, *spatial_shape, in_channels))
-
-    model = SpectralConv(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        n_modes=(6, 6),
-    )
-
-    params = model.init(rng, x)
-    y = model.apply(params, x)
-
-    assert y.shape == (batch, *spatial_shape, out_channels)
-
-
-# Custom initialization std
-
-def test_spectral_conv_custom_init_std():
-    """SpectralConv should work with custom initialization scale."""
-
-    rng = jax.random.PRNGKey(0)
-
-    batch = 2
-    spatial_shape = (12, 12)
     in_channels = 4
-    out_channels = 4
+    layers = [in_channels, 16, 8]
 
     x = jnp.ones((batch, *spatial_shape, in_channels))
 
-    model = SpectralConv(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        n_modes=(5, 5),
-        init_std=0.1,
-    )
+    model = LinearChannelMLP(layers=layers)
 
     params = model.init(rng, x)
     y = model.apply(params, x)
 
-    assert y.shape == x.shape
+    assert y.shape == (batch, *spatial_shape, layers[-1])

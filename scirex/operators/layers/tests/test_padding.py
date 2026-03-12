@@ -22,54 +22,111 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-import jax
+"""
+Unit tests for DomainPadding.
+
+Tests are written in N-D style to ensure padding works
+for arbitrary spatial dimensions.
+"""
+
 import jax.numpy as jnp
 import pytest
+
 from scirex.operators.layers.padding import DomainPadding
 
-def test_domain_padding_2d():
-    """Test 2D DomainPadding forward and inverse."""
-    batch, nx, ny, channels = 2, 16, 16, 3
-    padding = 0.25
-    x = jnp.ones((batch, nx, ny, channels))
-    
-    model = DomainPadding(padding=padding)
-    y = model.apply({}, x)
-    
-    # Check shape: 16 * 0.25 = 4. Symmetric padding adds 4 on each side, so 16 + 4 + 4 = 24.
-    assert y.shape == (batch, 24, 24, channels)
-    
-    # Test inverse
-    x_rec = model.apply({}, y, inverse=True, original_shape=x.shape)
-    assert x_rec.shape == x.shape
-    assert jnp.allclose(x, x_rec)
 
-def test_domain_padding_3d():
-    """Test 3D DomainPadding forward and inverse."""
-    batch, nx, ny, nz, channels = 2, 8, 8, 8, 3
-    padding = 0.125
-    x = jnp.ones((batch, nx, ny, nz, channels))
-    
-    model = DomainPadding(padding=padding)
-    y = model.apply({}, x)
-    
-    # 8 * 0.125 = 1. Symmetric padding: 8 + 1 + 1 = 10.
-    assert y.shape == (batch, 10, 10, 10, channels)
-    
-    # Test inverse
-    x_rec = model.apply({}, y, inverse=True, original_shape=x.shape)
-    assert x_rec.shape == x.shape
-    assert jnp.allclose(x, x_rec)
+# Forward padding (N-D)
 
-def test_domain_padding_list():
-    """Test DomainPadding with per-dimension padding list."""
-    batch, nx, ny, channels = 2, 16, 32, 3
+@pytest.mark.parametrize(
+    "spatial_shape,padding",
+    [
+        ((16, 16), 0.25),        # 2D
+        ((8, 8, 8), 0.125),      # 3D
+    ],
+)
+
+def test_domain_padding_forward_nd(spatial_shape, padding):
+    """Padding should expand spatial dimensions symmetrically."""
+
+    batch = 2
+    channels = 3
+
+    x = jnp.ones((batch, *spatial_shape, channels))
+
+    model = DomainPadding(padding=padding)
+
+    y = model.apply({}, x)
+
+    # compute expected padded shape
+    padded_dims = []
+    for d in spatial_shape:
+        p = int(round(d * padding))
+        padded_dims.append(d + 2 * p)
+
+    assert y.shape == (batch, *padded_dims, channels)
+
+
+# Inverse padding (crop)
+
+@pytest.mark.parametrize(
+    "spatial_shape,padding",
+    [
+        ((16, 16), 0.25),
+        ((8, 8, 8), 0.125),
+    ],
+)
+
+def test_domain_padding_inverse_nd(spatial_shape, padding):
+    """Inverse padding should restore the original tensor."""
+
+    batch = 2
+    channels = 3
+
+    x = jnp.ones((batch, *spatial_shape, channels))
+
+    model = DomainPadding(padding=padding)
+
+    padded = model.apply({}, x)
+
+    restored = model.apply({}, padded, inverse=True, original_shape=x.shape)
+
+    assert restored.shape == x.shape
+    assert jnp.allclose(restored, x)
+
+
+# List padding per dimension
+
+def test_domain_padding_list_padding():
+    """Padding specified per dimension should work."""
+
+    batch = 2
+    spatial_shape = (16, 32)
+    channels = 3
+
     padding = [0.25, 0.125]
-    x = jnp.ones((batch, nx, ny, channels))
-    
+
+    x = jnp.ones((batch, *spatial_shape, channels))
+
     model = DomainPadding(padding=padding)
+
     y = model.apply({}, x)
-    
-    # nx: 16 + 16*0.25*2 = 16 + 8 = 24
-    # ny: 32 + 32*0.125*2 = 32 + 8 = 40
-    assert y.shape == (batch, 24, 40, channels)
+
+    expected_x = 16 + 2 * int(round(16 * 0.25))
+    expected_y = 32 + 2 * int(round(32 * 0.125))
+
+    assert y.shape == (batch, expected_x, expected_y, channels)
+
+
+# Error handling
+
+def test_domain_padding_inverse_requires_shape():
+    """Inverse padding must raise error if original_shape is missing."""
+
+    x = jnp.ones((2, 16, 16, 3))
+
+    model = DomainPadding(padding=0.25)
+
+    padded = model.apply({}, x)
+
+    with pytest.raises(ValueError):
+        model.apply({}, padded, inverse=True)
