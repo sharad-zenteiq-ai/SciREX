@@ -30,7 +30,6 @@ from .channel_mlp import ChannelMLP
 class IntegralTransform(nn.Module):
     """
     Integral Kernel Transform (GNO-style).
-    Equivalent to neuraloperator's IntegralTransform.
     
     Computes \int_{D} k(x, y, f(y)) * f(y) dy or variants.
     
@@ -53,13 +52,7 @@ class IntegralTransform(nn.Module):
         1. Parametrize kernel k via a ChannelMLP
         2. Aggregate information from neighbors
         """
-        # Note: A full GNO implementation in JAX typically requires 
-        # graph-based operations (scatter/gather).
-        # For now, we provide the architectural skeleton matching neuraloperator.
-        
-        # In a standard FNO (grid), we use SpectralConv instead of this explicit form.
-        # This layer acts as a placeholder/base for GNO implementations in SciREX.
-        
+                     
         # Example of a pointwise kernel approximation if used on grids:
         kernel_branch = ChannelMLP(
             out_channels=self.channels,
