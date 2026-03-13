@@ -1,0 +1,32 @@
+name: scirex
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - h5py
+  - tqdm
+
+  - pip:
+      - jax[cuda12_pip]==0.4.30
+      - flax
+      - optax
+      - jaxtyping
+      - neuraloperator
+      - torch==2.10.0
+      - torch-harmonics
+      - tensorly
+      - tensorly-torch
+      - seaborn
+      - wandb
+      - pyvista
+      - vtk
+      - fastapi
+      - uvicorn

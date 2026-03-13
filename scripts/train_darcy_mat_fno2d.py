@@ -77,15 +77,15 @@ import matplotlib.gridspec as gridspec
 from scirex.operators.models.fno import FNO
 from scirex.operators.training import create_train_state, GaussianNormalizer
 from scirex.operators.losses import lp_loss
-from scirex.operators.data.darcy_pt import load_darcy_pt
-from configs.darcy_pt_fno_config import DarcyPtFNO2DConfig
+from scirex.operators.data.darcy_mat import load_darcy_mat
+from configs.darcy_mat_fno_config import DarcyMatFNO2DConfig
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LR Schedule  (identical helper to train_poisson2d_fno.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def make_schedule(config: DarcyPtFNO2DConfig):
+def make_schedule(config: DarcyMatFNO2DConfig):
     """Linear warmup  +  cosine or step decay."""
     spe = getattr(config, "_steps_per_epoch", config.steps_per_epoch)
     total_steps   = config.epochs * spe
@@ -246,14 +246,15 @@ def plot_multi_sample_comparison(
 
 def main():
     # ── 1. Config ─────────────────────────────────────────────────────────────
-    config = DarcyPtFNO2DConfig()
+    config = DarcyMatFNO2DConfig()
 
     # Allow environment-variable overrides for easy path changes
     config.train_path = os.environ.get("DARCY_TRAIN_PATH", config.train_path)
     config.test_path  = os.environ.get("DARCY_TEST_PATH",  config.test_path)
+    config.subsample_rate = int(os.environ.get("DARCY_SUBSAMPLE_RATE", config.subsample_rate))
 
     print("=" * 65)
-    print("  SciREX FNO2D — Darcy Flow (neuraloperator dataset)")
+    print("  SciREX FNO2D — Darcy Flow (original FNO paper .mat dataset)")
     print("=" * 65)
     print(f"  train_path : {config.train_path}")
     print(f"  test_path  : {config.test_path}")
@@ -268,15 +269,16 @@ def main():
     rng, init_rng = jax.random.split(rng)
 
     # ── 2. Data ───────────────────────────────────────────────────────────────
-    x_train, y_train, x_test, y_test = load_darcy_pt(
+    x_train, y_train, x_test, y_test = load_darcy_mat(
         train_path=config.train_path,
         test_path=config.test_path,
         n_train=config.n_train,
         n_test=config.n_test,
-        resolution=config.resolution,
+        subsample_rate=config.subsample_rate,
     )
 
-    # Determine actual spatial resolution from loaded data
+    # Actual loaded sizes (may be less than config values if file is smaller)
+    n_train_actual = x_train.shape[0]
     nx, ny = x_train.shape[1], x_train.shape[2]
     in_channels = x_train.shape[-1]   # 3
 
@@ -319,7 +321,7 @@ def main():
     )
 
     # ── 5. Optimiser / schedule ───────────────────────────────────────────────
-    steps_per_epoch = config.n_train // config.batch_size
+    steps_per_epoch = n_train_actual // config.batch_size
     config._steps_per_epoch = steps_per_epoch          # used by make_schedule
     schedule    = make_schedule(config)
     total_steps = config.epochs * steps_per_epoch
@@ -335,9 +337,9 @@ def main():
     # ── 6. Paths ──────────────────────────────────────────────────────────────
     ckpt_dir = os.path.join(project_root, "experiments", "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_path = os.path.join(ckpt_dir, "darcy_pt_fno2d_best.pkl")
+    ckpt_path = os.path.join(ckpt_dir, "darcy_mat_fno2d_best.pkl")
 
-    results_dir = os.path.join(project_root, "experiments", "results", "darcy_pt_fno2d")
+    results_dir = os.path.join(project_root, "experiments", "results", "darcy_mat_fno2d")
     os.makedirs(results_dir, exist_ok=True)
 
     best_rel_l2 = float("inf")
@@ -363,7 +365,7 @@ def main():
 
         # Shuffle training data every epoch
         rng_key, sk = jax.random.split(rng_key)
-        perm   = jax.random.permutation(sk, config.n_train)
+        perm   = jax.random.permutation(sk, n_train_actual)
         x_shuf = x_tr[perm]
         y_shuf = y_tr[perm]
 
