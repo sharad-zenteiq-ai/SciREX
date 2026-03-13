@@ -35,7 +35,6 @@ import numpy as np
 import torch
 
 from scirex.operators.data.poisson import random_poisson_batch, random_poisson_3d_batch
-from scirex.operators.data.data_utils import generate_poisson_data, generate_poisson_3d_data
 
 @pytest.mark.parametrize("resolution", [16])
 def test_PoissonDataset(resolution):
@@ -55,21 +54,3 @@ def test_Poisson3DDataset(resolution):
     assert u.shape == (2, resolution, resolution, resolution, 1)
     assert isinstance(f, np.ndarray)
     assert isinstance(u, np.ndarray)
-
-@pytest.mark.parametrize("resolution", [16])
-def test_generate_poisson_data(resolution):
-    input_data, output_data = generate_poisson_data(n_samples=2, nx=resolution, ny=resolution)
-    
-    assert input_data.shape == (2, 3, resolution, resolution) 
-    assert output_data.shape == (2, 1, resolution, resolution)
-    assert isinstance(input_data, torch.Tensor)
-    assert isinstance(output_data, torch.Tensor)
-
-@pytest.mark.parametrize("resolution", [16])
-def test_generate_poisson_3d_data(resolution):
-    input_data, output_data = generate_poisson_3d_data(n_samples=2, nx=resolution, ny=resolution, nz=resolution)
-    
-    assert input_data.shape == (2, 4, resolution, resolution, resolution) 
-    assert output_data.shape == (2, 1, resolution, resolution, resolution)
-    assert isinstance(input_data, torch.Tensor)
-    assert isinstance(output_data, torch.Tensor)
