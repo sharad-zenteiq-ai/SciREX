@@ -23,11 +23,12 @@
 # please contact: contact@scirex.org
 
 """
-Training script for Navier-Stokes (2D+Time) equation using FNO3D (JAX/Flax).
+Training script for Navier-Stokes 2D equation using FNO2D (JAX/Flax).
 Aligned with the official neuraloperator reference.
 
 Reference: https://github.com/neuraloperator/neuraloperator/blob/main/scripts/train_navier_stokes.py
    - Default Training loss: H1Loss
+   - Default Optimizer: AdamW with StepLR
    - Framework: JAX/Flax
 """
 
@@ -49,15 +50,15 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from scirex.operators.models import FNO3D
+from scirex.operators.models import FNO2D
 from scirex.operators.training import create_train_state, GaussianNormalizer
 from scirex.operators.losses.data_losses import h1_loss, lp_loss, mse
-from configs.ns_fno3d_config import NSFNO3DConfig
+from configs.ns_fno2d_config import NSFNO2DConfig
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 # ── 1. LR SCHEDULE ──
-def make_schedule(config: NSFNO3DConfig):
+def make_schedule(config: NSFNO2DConfig):
     """Create learning rate schedule from config."""
     spe = config.get_steps_per_epoch()
     
@@ -69,28 +70,29 @@ def make_schedule(config: NSFNO3DConfig):
             decay_rate=config.opt.gamma,
             staircase=True,
         )
-    else:
+    elif config.scheduler_type == "cosine":
         total_steps = config.opt.n_epochs * spe
         return optax.cosine_decay_schedule(
             init_value=config.opt.learning_rate,
             decay_steps=total_steps,
             alpha=0.0,
         )
+    else:
+        raise ValueError(f"Unsupported scheduler: {config.opt.scheduler}")
 
 # ── 2. DATA LOADING ──
-def load_ns_data(config: NSFNO3DConfig):
-    """Load Navier-Stokes .pt files and prepare for FNO3D (with trivial Z)."""
+def load_ns_data(config: NSFNO2DConfig):
+    """Load Navier-Stokes .pt files and prepare for FNO2D."""
     data_path = config.data.folder
-    print(f"Loading 3D data from {data_path}...")
+    print(f"Loading data from {data_path}...")
 
     train_dict = torch.load(os.path.join(data_path, config.data.train_file), map_location="cpu")
     test_dict = torch.load(os.path.join(data_path, config.data.test_file), map_location="cpu")
 
-    # Add z-dim (size 1) and channel dim: (N, H, W) -> (N, H, W, 1, 1)
-    train_x = train_dict["x"][: config.data.n_train].numpy()[..., np.newaxis, np.newaxis]
-    train_y = train_dict["y"][: config.data.n_train].numpy()[..., np.newaxis, np.newaxis]
-    test_x = test_dict["x"][: config.data.n_tests[0]].numpy()[..., np.newaxis, np.newaxis]
-    test_y = test_dict["y"][: config.data.n_tests[0]].numpy()[..., np.newaxis, np.newaxis]
+    train_x = train_dict["x"][: config.data.n_train].numpy()[..., np.newaxis]
+    train_y = train_dict["y"][: config.data.n_train].numpy()[..., np.newaxis]
+    test_x = test_dict["x"][: config.data.n_tests[0]].numpy()[..., np.newaxis]
+    test_y = test_dict["y"][: config.data.n_tests[0]].numpy()[..., np.newaxis]
 
     print(f"  Train: x={train_x.shape}, y={train_y.shape}")
     print(f"  Test:  x={test_x.shape}, y={test_y.shape}")
@@ -128,14 +130,14 @@ def eval_step(state, batch_x, batch_y_raw, y_mean, y_std):
 
 # ── 4. MAIN ──
 def main():
-    config = NSFNO3DConfig()
+    config = NSFNO2DConfig()
     print(f"Config: {config.opt.training_loss} loss, {config.opt.n_epochs} epochs")
 
     # Load & Prepare Data
     train_x, train_y, test_x, test_y = load_ns_data(config)
     test_y_raw = jnp.array(test_y)
 
-    # Normalization
+    # Normalization (Reference DataProcessor style)
     y_normalizer = GaussianNormalizer(train_y)
     train_y_norm = jnp.array(y_normalizer.encode(train_y))
     y_mean, y_std = jnp.array(y_normalizer.mean), jnp.array(y_normalizer.std)
@@ -145,10 +147,10 @@ def main():
     test_x_norm = jnp.array(x_normalizer.encode(test_x))
 
     # Model
-    model = FNO3D(
+    model = FNO2D(
         hidden_channels=config.model.hidden_channels,
         n_layers=config.model.n_layers,
-        n_modes=tuple(config.model.n_modes),
+        n_modes=config.model.n_modes,
         out_channels=config.model.out_channels,
         lifting_channel_ratio=config.model.lifting_channel_ratio,
         projection_channel_ratio=config.model.projection_channel_ratio,
@@ -156,6 +158,7 @@ def main():
         use_norm=(config.model.norm != "None"),
         fno_skip=config.model.fno_skip,
         padding=config.model.domain_padding,
+        use_channel_mlp=config.model.use_channel_mlp,
     )
 
     # Optimizer & Scheduler
@@ -175,12 +178,14 @@ def main():
     print(f"\nTraining {config.opt.training_loss}...")
     num_train = train_x.shape[0]
     best_test_l2 = float("inf")
+    best_train_loss = float("inf")
     
+    total_start_time = time.time()
     for epoch in range(1, config.opt.n_epochs + 1):
         epoch_loss = 0.0
         start_time = time.time()
         
-        # Shuffle
+        # Shuffle for each epoch
         rng, shuffle_rng = jax.random.split(rng)
         idx = jax.random.permutation(shuffle_rng, num_train)
         
@@ -192,17 +197,23 @@ def main():
 
         epoch_time = time.time() - start_time
         
-        # Eval
+        # Test Eval
         test_metrics = eval_step(state, test_x_norm, test_y_raw, y_mean, y_std)
         test_l2 = float(test_metrics["l2"])
 
-        if epoch % 50 == 0 or epoch == 1:
-            print(f"Epoch {epoch:3d} | Loss: {epoch_loss/config.get_steps_per_epoch():.6f} | Test L2: {test_l2:.4f} | {epoch_time:.2f}s")
+        if epoch % 1 == 0 or epoch == 1:
+            # Match neuraloperator logging: Loss is per-sample average
+            avg_epoch_loss = epoch_loss / num_train
+            print(f"Epoch {epoch:3d} | Loss: {avg_epoch_loss:.6f} | Test L2: {test_l2:.4f} | {epoch_time:.2f}s")
 
         if test_l2 < best_test_l2:
             best_test_l2 = test_l2
+            best_train_loss = epoch_loss / config.get_steps_per_epoch()
 
-    print(f"\nFinal Best Test L2: {best_test_l2:.6f}")
+    total_time = time.time() - total_start_time
+    print(f"\nTotal Computational Time: {total_time:.2f}s")
+    print(f"Final Best Test L2: {best_test_l2:.6f}")
+    print(f"Training Loss at Best Test L2: {best_train_loss:.6f}")
 
 if __name__ == "__main__":
     main()

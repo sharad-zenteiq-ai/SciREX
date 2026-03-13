@@ -23,186 +23,100 @@
 # please contact: contact@scirex.org
 
 """
-Experiment configuration for Navier-Stokes 2D using FNO3D.
-
-Dataset: nsforcing from the neuraloperator Zenodo archive.
-  - x: vorticity input (forcing), y: vorticity output (solution)
-  - Each sample is a 2D field on a unit square grid.
-  - A trivial z-dimension (size 1) is added to use FNO3D on 2D snapshots.
-
-Reference: https://github.com/neuraloperator/neuraloperator
-
-Usage
------
-    from configs.ns_fno3d_config import NSFNO3DConfig, NSFNO3D_Small
-
-    # Use default model (Large)
-    config = NSFNO3DConfig()
-    
-    # Or override with a medium model
-    config = NSFNO3DConfig(model=NSFNO3D_Medium())
+Experiment configuration for Navier-Stokes (2D+Time) using FNO3D.
+Aligned with neuraloperator (https://github.com/neuraloperator/neuraloperator).
 """
 
-from dataclasses import dataclass, field
-from typing import Literal, Tuple
-from configs.models import SimpleFNOConfig
+from typing import List, Optional, Any
+from zencfg import ConfigBase
+from configs.models import SimpleFNOConfig, FNO_Medium3D
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  NS FNO3D  P R E S E T S
+#  N S   F N O 3 D   P R E S E T S
 # ═══════════════════════════════════════════════════════════════════
 
-@dataclass
 class NSFNO3D_Small(SimpleFNOConfig):
-    """Small FNO3D architecture preset tuned for 2D Navier-Stokes."""
-    n_modes: Tuple[int, int, int] = (16, 16, 1)
+    """Small FNO3D architecture preset tuned for 3D Navier-Stokes."""
+    data_channels: int = 1
+    out_channels: int = 1
+    n_modes: List[int] = [16, 16, 16]
     hidden_channels: int = 32
-    n_layers: int = 4
-    in_channels: int = 1
-    out_channels: int = 1
-    use_grid: bool = True
-    use_norm: bool = False
+    projection_channel_ratio: int = 2
 
 
-@dataclass
 class NSFNO3D_Medium(SimpleFNOConfig):
-    """Medium FNO3D architecture preset tuned for 2D Navier-Stokes.
-    Matches the original reference script baseline."""
-    n_modes: Tuple[int, int, int] = (32, 32, 1)
+    """Medium FNO3D architecture preset tuned for 3D Navier-Stokes."""
+    data_channels: int = 1
+    out_channels: int = 1
+    n_modes: List[int] = [24, 24, 24]
     hidden_channels: int = 64
-    n_layers: int = 4
-    in_channels: int = 1
-    out_channels: int = 1
-    use_grid: bool = True
-    use_norm: bool = False
+    projection_channel_ratio: int = 4
 
 
-@dataclass
 class NSFNO3D_Large(SimpleFNOConfig):
-    """Large FNO3D architecture preset tuned for 2D Navier-Stokes.
-    Increases hidden channels for more representational power."""
-    n_modes: Tuple[int, int, int] = (32, 32, 1)
+    """Large FNO3D architecture preset tuned for 3D Navier-Stokes."""
+    data_channels: int = 1
+    out_channels: int = 1
+    n_modes: List[int] = [32, 32, 32]
     hidden_channels: int = 128
-    n_layers: int = 4
-    in_channels: int = 1
-    out_channels: int = 1
-    use_grid: bool = True
-    use_norm: bool = False
+    projection_channel_ratio: int = 4
 
 
-@dataclass
 class NSFNO3D_Huge(SimpleFNOConfig):
-    """Huge FNO3D architecture preset tuned for 2D Navier-Stokes.
-    Maximum complexity for single-GPU training."""
-    n_modes: Tuple[int, int, int] = (32, 32, 1)
-    hidden_channels: int = 256
-    n_layers: int = 4
-    in_channels: int = 1
+    """Huge FNO3D architecture preset tuned for 3D Navier-Stokes."""
+    data_channels: int = 1
     out_channels: int = 1
-    use_grid: bool = True
-    use_norm: bool = False
+    n_modes: List[int] = [48, 48, 48]
+    hidden_channels: int = 256
+    projection_channel_ratio: int = 4
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  E X P E R I M E N T   C O N F I G
+#  E X P E R I M E N T   S E T T I N G S
 # ═══════════════════════════════════════════════════════════════════
 
-@dataclass
-class NSFNO3DConfig:
-    """Full experiment config for Navier-Stokes 2D + FNO3D."""
+class NavierStokesOptConfig(ConfigBase):
+    n_epochs: int = 600
+    learning_rate: float = 3e-4  # Aligned with reference
+    training_loss: str = "h1"
+    weight_decay: float = 1e-4
+    scheduler: str = "StepLR"
+    step_size: int = 100
+    gamma: float = 0.5
 
-    # ── Model Architecture (preset, can be swapped) ──
-    # Default to Medium to match neuraloperator reference
-    model: SimpleFNOConfig = field(default_factory=NSFNO3D_Medium)
 
-    # ── Dataset Paths ──
-    data_dir: str = "/media/HDD/mamta_backup/datasets/fno/navier_stokes"
+class NavierStokesDatasetConfig(ConfigBase):
+    folder: str = "/media/HDD/mamta_backup/datasets/fno/navier_stokes"
     train_file: str = "ns_train_64.pt"
     test_file: str = "ns_test_64.pt"
-
-    # ── Data ──
-    # Note: ns_train_64.pt only contains 1000 samples. 
-    # n_train = 1000 is used even if 10000 is requested.
+    batch_size: int = 8
     n_train: int = 1000
-    n_test: int = 200
+    train_resolution: int = 64
+    n_tests: List[int] = [200]
+    test_resolutions: List[int] = [64]
+    test_batch_sizes: List[int] = [8]
     encode_input: bool = True
     encode_output: bool = True
 
-    # ── Training Parameters ──
-    # Ref: neuraloperator default 3e-4, 600 epochs
-    learning_rate: float = 3e-4
-    weight_decay: float = 1e-4
-    batch_size: int = 8
-    epochs: int = 500
-    seed: int = 42
 
-    # ── LR Scheduler ──
-    scheduler_type: Literal["step", "cosine"] = "step"
-    scheduler_step_size: int = 100  # Decay LR every N epochs
-    scheduler_gamma: float = 0.5
-    cosine_decay_epochs: int = 600
+class Default(ConfigBase):
+    """Full experiment config for Navier-Stokes 3D + FNO3D."""
+    
+    verbose: bool = True
+    model: SimpleFNOConfig = NSFNO3D_Medium()
+    opt: NavierStokesOptConfig = NavierStokesOptConfig()
+    data: NavierStokesDatasetConfig = NavierStokesDatasetConfig()
 
-    # ── Loss ──
-    train_loss: str = "h1"  # "h1" or "lp"
-
-    # ── Checkpoint / Results ──
+    # ── Paths ──
     checkpoint_dir: str = "experiments/checkpoints"
     results_dir: str = "experiments/results/ns_fno3d"
     model_name: str = "ns_fno3d_jax.pkl"
+    seed: int = 42
 
-    # ── Convenience properties that proxy into the model preset ──
-    @property
-    def n_modes(self):
-        return self.model.n_modes
+    def get_steps_per_epoch(self) -> int:
+        return max(self.data.n_train // self.data.batch_size, 1)
 
-    @property
-    def hidden_channels(self):
-        return self.model.hidden_channels
 
-    @property
-    def n_layers(self):
-        return self.model.n_layers
-
-    @property
-    def in_channels(self):
-        return self.model.in_channels
-
-    @property
-    def out_channels(self):
-        return self.model.out_channels
-
-    @property
-    def lifting_channel_ratio(self):
-        return self.model.lifting_channel_ratio
-
-    @property
-    def projection_channel_ratio(self):
-        return self.model.projection_channel_ratio
-
-    @property
-    def use_grid(self):
-        return self.model.use_grid
-
-    @property
-    def fno_skip(self):
-        return self.model.fno_skip
-
-    @property
-    def use_channel_mlp(self):
-        return self.model.use_channel_mlp
-
-    @property
-    def channel_mlp_skip(self):
-        return self.model.channel_mlp_skip
-
-    @property
-    def use_norm(self):
-        return self.model.use_norm
-
-    @property
-    def domain_padding(self):
-        return self.model.domain_padding
-
-    @property
-    def steps_per_epoch(self):
-        return self.n_train // self.batch_size
+# Alias for backward compatibility
+NSFNO3DConfig = Default
