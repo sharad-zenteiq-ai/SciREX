@@ -52,8 +52,6 @@ def lp_loss(pred: jnp.ndarray, target: jnp.ndarray, p: int = 2) -> jnp.ndarray:
 def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
     """Relative H1 Sobolev loss.
 
-    Matches the ``neuraloperator`` ``H1Loss(d=2)`` convention:
-
         per_sample = sqrt(diff) / (sqrt(ynorm) + eps)
 
     where ``diff`` and ``ynorm`` are the squared L2 norms of the
