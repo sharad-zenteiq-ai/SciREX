@@ -64,7 +64,7 @@ def solve_poisson_periodic_batch_2d(f_batch: np.ndarray) -> np.ndarray:
 
     for i in range(batch):
         F_hat = np.fft.fft2(f[i])
-        U_hat = -F_hat / k2
+        U_hat = F_hat / k2
         U_hat[0, 0] = 0.0  # set mean to zero
         ui = np.fft.ifft2(U_hat).real
         u[i] = ui.astype(np.float32)
@@ -170,7 +170,7 @@ def solve_poisson_periodic_batch_3d(f_batch: np.ndarray) -> np.ndarray:
 
     for i in range(batch):
         F_hat = np.fft.fftn(f[i])
-        U_hat = -F_hat / k2
+        U_hat = F_hat / k2
         U_hat[0, 0, 0] = 0.0
         ui = np.fft.ifftn(U_hat).real
         u[i] = ui.astype(np.float32)

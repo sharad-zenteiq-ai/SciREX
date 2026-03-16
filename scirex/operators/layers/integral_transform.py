@@ -28,7 +28,7 @@ import jax.numpy as jnp
 from .channel_mlp import ChannelMLP
 
 class IntegralTransform(nn.Module):
-    """
+    r"""
     Integral Kernel Transform (GNO-style).
     Equivalent to neuraloperator's IntegralTransform.
     

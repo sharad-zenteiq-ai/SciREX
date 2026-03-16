@@ -33,7 +33,7 @@ the model learns equally from all samples, regardless of their absolute magnitud
 import jax.numpy as jnp
 
 def mse(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
-    """
+    r"""
     Mean Squared Error.
     
     Mathematical Formula:
@@ -45,7 +45,7 @@ def mse(pred: jnp.ndarray, target: jnp.ndarray) -> jnp.ndarray:
 
 
 def lp_loss(pred: jnp.ndarray, target: jnp.ndarray, p: int = 2) -> jnp.ndarray:
-    """
+    r"""
     Relative Lp loss (Default is L2).
     Standard objective for operator learning.
     
@@ -73,7 +73,7 @@ def lp_loss(pred: jnp.ndarray, target: jnp.ndarray, p: int = 2) -> jnp.ndarray:
 
 
 def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
-    """
+    r"""
     Relative H1 Sobolev loss.
     
     Mathematical Formula:
