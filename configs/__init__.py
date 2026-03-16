@@ -36,6 +36,8 @@ from configs.models import (  # noqa: F401
     FNO_Large2D,
     FNO_Small3D,
     FNO_Medium3D,
+    GINOConfig,
+    GINO_Small3d,
 )
 
 # ── Experiment configs ──

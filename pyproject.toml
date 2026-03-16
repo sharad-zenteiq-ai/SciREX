@@ -49,6 +49,7 @@ dl = [
     "jaxtyping",
     "equinox",
     "optax",
+    "flax",
 ]
 ml = [
     "xgboost>=1.5.0",

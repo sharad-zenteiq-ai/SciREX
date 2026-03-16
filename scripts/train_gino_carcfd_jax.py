@@ -27,43 +27,7 @@ from scirex.operators.training import TrainState
 from scirex.operators.losses import lp_loss
 from scirex.operators.data.car_cfd_dataset import CarCFDDataset
 from scirex.operators.training.normalizers import GaussianNormalizer
-
-@dataclass
-class GINOCarCFDConfig:
-    # Training
-    epochs: int = 20
-    batch_size: int = 1
-    learning_rate: float = 1e-3
-    weight_decay: float = 1e-4
-    seed: int = 42
-    
-    # Scheduler
-    scheduler_type: str = "cosine"
-    cosine_decay_epochs: int = 20
-    scheduler_step_size: int = 10
-    scheduler_gamma: float = 0.5
-    
-    # Data
-    data_root: str = "./data"
-    query_res: List[int] = field(default_factory=lambda: [32, 32, 32])
-    n_train: int = 2 
-    n_test: int = 1
-    download: bool = True
-    
-    # Model - GINO Core
-    in_channels: int = 1  # Not actually used physically across mesh unless f_y is piped, but standard placeholder
-    out_channels: int = 1 # pressure
-    gno_coord_dim: int = 3
-    in_gno_radius: float = 0.05
-    out_gno_radius: float = 0.05
-    in_gno_transform_type: str = "linear"
-    out_gno_transform_type: str = "linear"
-    
-    # Model - FNO
-    fno_n_modes: Tuple[int, ...] = (16, 16, 16)
-    fno_hidden_channels: int = 64
-    fno_lifting_channel_ratio: int = 2
-    fno_n_layers: int = 4
+from configs.gino_carcfd_config import GINOCarCFDConfig
     
 def make_schedule(config: GINOCarCFDConfig, steps_per_epoch: int):
     total_steps = config.epochs * steps_per_epoch

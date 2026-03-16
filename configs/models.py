@@ -229,3 +229,61 @@ class FNO_Medium3D(SimpleFNOConfig):
     out_channels: int = 1
     use_grid: bool = False
     use_norm: bool = True
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  G I N O   P R E S E T S
+# ═══════════════════════════════════════════════════════════════════
+
+@dataclass
+class GINOConfig(ModelConfig):
+    """
+    Complete GINO architecture configuration.
+    """
+    arch: str = "gino"
+
+    # GINO core
+    latent_feature_channels: Optional[int] = None
+    projection_channel_ratio: int = 4
+    gno_coord_dim: int = 3
+    in_gno_radius: float = 0.033
+    out_gno_radius: float = 0.033
+    in_gno_transform_type: str = "linear"
+    out_gno_transform_type: str = "linear"
+
+    in_gno_pos_embed_type: str = "transformer"
+    out_gno_pos_embed_type: str = "transformer"
+    gno_embed_channels: int = 32
+    gno_embed_max_positions: int = 10000
+
+    # FNO parameters
+    fno_n_modes: tuple = (16, 16, 16)
+    fno_hidden_channels: int = 64
+    fno_lifting_channel_ratio: int = 2
+    fno_n_layers: int = 4
+
+    # GNO MLP parameters
+    in_gno_channel_mlp_hidden_layers: tuple = (80, 80, 80)
+    out_gno_channel_mlp_hidden_layers: tuple = (512, 256)
+
+    # FNO extras
+    fno_use_channel_mlp: bool = True
+    fno_norm: bool = False
+    fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
+    fno_channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
+
+    max_neighbors: int = 10
+
+
+@dataclass
+class GINO_Small3d(GINOConfig):
+    """
+    A small GINO for 3D Car-CFD problems.
+    """
+    in_channels: int = 1
+    out_channels: int = 1
+    fno_n_modes: tuple = (16, 16, 16)
+    fno_hidden_channels: int = 64
+    fno_n_layers: int = 4
+    in_gno_radius: float = 0.05
+    out_gno_radius: float = 0.05

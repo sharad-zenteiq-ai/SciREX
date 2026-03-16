@@ -50,7 +50,7 @@ class GNOBlock(nn.Module):
         # =========================
         # Neighbor search
         # =========================
-        self.neighbor_search = NeighborSearchJAX(
+        self.neighbor_search = NeighborSearch(
             max_neighbors=self.max_neighbors,
             return_norm=self.weighting_fn is not None
         )
