@@ -48,3 +48,10 @@ class GaussianNormalizer:
 
     def decode(self, x):
         return x * (self.std + self.eps) + self.mean
+
+class UnitGaussianNormalizer(GaussianNormalizer):
+    """
+    Alias for GaussianNormalizer, often used in FNO literature.
+    """
+    def __init__(self, x, eps=1e-5):
+        super().__init__(x, eps=eps)

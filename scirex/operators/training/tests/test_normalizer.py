@@ -24,7 +24,7 @@
 
 import jax.numpy as jnp
 import pytest
-from scirex.operators.training.normalizers import GaussianNormalizer
+from scirex.operators.training.normalizers import GaussianNormalizer, UnitGaussianNormalizer
 
 def test_gaussian_normalizer():
     """Test GaussianNormalizer encoding and decoding."""
@@ -61,3 +61,11 @@ def test_gaussian_normalizer_multichannel():
     
     decoded = normalizer.decode(encoded)
     assert jnp.allclose(data, decoded)
+
+def test_unit_gaussian_normalizer():
+    """Test UnitGaussianNormalizer alias."""
+    data = jnp.array(jnp.linspace(0, 1, 100).reshape(4, 5, 5, 1))
+    normalizer = UnitGaussianNormalizer(data)
+    encoded = normalizer.encode(data)
+    decoded = normalizer.decode(encoded)
+    assert jnp.allclose(data, decoded, atol=1e-5)

@@ -47,7 +47,7 @@ import matplotlib.pyplot as plt
 import json
 
 from scirex.operators.models.fno import FNO
-from scirex.operators.training import create_train_state, TrainState
+from scirex.operators.training import create_train_state, TrainState, UnitGaussianNormalizer
 from scirex.operators.losses import mse, lp_loss
 from scirex.operators.data import random_poisson_batch
 from configs.poisson_fno_config import FNO2DConfig
@@ -97,17 +97,6 @@ def make_schedule(config: FNO2DConfig):
     
     return schedule
 
-class UnitGaussianNormalizer:
-    def __init__(self, x, eps=1e-5):
-        self.mean = jnp.mean(x, axis=(0, 1, 2), keepdims=True)
-        self.std = jnp.std(x, axis=(0, 1, 2), keepdims=True)
-        self.eps = eps
-
-    def encode(self, x):
-        return (x - self.mean) / (self.std + self.eps)
-
-    def decode(self, x):
-        return x * (self.std + self.eps) + self.mean
 
 def main():
     # 1. Load Configuration

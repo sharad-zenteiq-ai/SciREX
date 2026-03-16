@@ -43,7 +43,7 @@ from flax import linen as nn
 import json
 
 from scirex.operators.models.fno import FNO
-from scirex.operators.training import create_train_state, GaussianNormalizer
+from scirex.operators.training import create_train_state, UnitGaussianNormalizer
 from scirex.operators.data import random_poisson_batch
 from configs.poisson_fno_config import FNO2DConfig
 
@@ -100,8 +100,8 @@ def main():
     f_train_ref, u_train_ref = random_poisson_batch(
         batch_size=config.n_train, nx=nx, ny=ny, channels=1, rng_seed=config.seed
     )
-    x_normalizer = GaussianNormalizer(f_train_ref)
-    y_normalizer = GaussianNormalizer(u_train_ref)
+    x_normalizer = UnitGaussianNormalizer(f_train_ref)
+    y_normalizer = UnitGaussianNormalizer(u_train_ref)
 
     # Generate Test Data (different seed)
     f_test, u_test = random_poisson_batch(
