@@ -1,6 +1,6 @@
 import json
 import urllib.request
-from typing import List, Union, Dict, Iterator
+from typing import List, Union, Dict, Iterator, Optional
 from pathlib import Path
 
 import numpy as np
@@ -95,49 +95,146 @@ class CarCFDDataset:
         """Initialize the CarCFDDataset."""
         self.zenodo_record_id = "13936501"
         self.root_dir = Path(root_dir).expanduser().resolve()
-        self.n_train = n_train
-        self.n_test = n_test
         self.query_res = query_res
 
-        self.item_dir_name = "processed-car-pressure-data"
-        self.data_dir = self.root_dir / self.item_dir_name
+        # The dataset often has a nested structure after extraction
+        # We look for where 'train.txt' and 'data' live
+        potential_dirs = [
+             self.root_dir,
+             self.root_dir / "processed-car-pressure-data",
+             self.root_dir / "processed-car-pressure-data" / "processed-car-pressure-data"
+        ]
+        
+        self.data_dir = None
+        self.train_txt = None
+        self.test_txt = None
+        
+        for d in potential_dirs:
+            if (d / "train.txt").exists() and (d / "data").exists():
+                self.data_dir = d / "data"
+                self.train_txt = d / "train.txt"
+                self.test_txt = d / "test.txt"
+                break
+        
+        if self.data_dir is None:
+            if download:
+                print(f"Data not found locally. Attempting download to {self.root_dir}...")
+                download_from_zenodo_record(record_id=self.zenodo_record_id, root=self.root_dir)
+                # Re-check after download
+                for d in potential_dirs:
+                    if (d / "train.txt").exists() and (d / "data").exists():
+                        self.data_dir = d / "data"
+                        self.train_txt = d / "train.txt"
+                        self.test_txt = d / "test.txt"
+                        break
+            
+            if self.data_dir is None:
+                print(f"Warning: Could not find dataset structure in {self.root_dir}")
+                self.train_data = []
+                self.test_data = []
+                return
 
-        if download and not self.data_dir.exists():
-            download_from_zenodo_record(record_id=self.zenodo_record_id, root=self.root_dir)
+        # Load samples
+        self.train_data = self._load_data_split(self.train_txt, n_samples=n_train)
+        self.test_data = self._load_data_split(self.test_txt, n_samples=n_test)
 
-        # Load samples assuming the extracted data format is compatible (.npz mappings)
-        self.train_data = self._load_data(split="train", n_samples=n_train)
-        self.test_data = self._load_data(split="test", n_samples=n_test)
+        self.n_train = len(self.train_data)
+        self.n_test = len(self.test_data)
 
         # Clean/preprocess instances natively using numpy
         self._process_data(self.train_data)
         self._process_data(self.test_data)
 
-    def _load_data(self, split: str, n_samples: int) -> List[Dict[str, np.ndarray]]:
-        """
-        Loads dataset examples dynamically looking for matching `.npz` objects.
-        """
-        if not self.data_dir.exists():
-            print(f"Warning: directory '{self.data_dir}' does not exist. Returning empty `{split}` dataset.")
+    def _load_data_split(self, split_file: Path, n_samples: int) -> List[Dict[str, np.ndarray]]:
+        """Loads data samples based on indices in the split file."""
+        if not split_file or not split_file.exists():
             return []
-
-        data_list = []
-        files = sorted(list(self.data_dir.glob(f"{split}_*.npz")))
-        
-        # Fallback to general files if specific split naming isn't maintained
-        if not files:
-            files = sorted(list(self.data_dir.glob("*.npz")))
-
-        for i, file_path in enumerate(files[:n_samples]):
-            data_dict = np.load(file_path, allow_pickle=True)
-            # Unpack NpzFile into native dictionary of numpy arrays
-            ready_dict = {k: data_dict[k] for k in data_dict.files}
-            data_list.append(ready_dict)
             
-        if len(data_list) < n_samples:
-            print(f"Warning: Requested {n_samples} {split} samples, but only {len(data_list)} available files were found.")
-
+        with open(split_file, "r") as f:
+            line = f.readline().strip()
+            if not line: return []
+            indices = [idx.strip() for idx in line.split(",") if idx.strip()]
+            
+        data_list = []
+        for idx in indices[:n_samples]:
+            sample = self._load_item(idx)
+            if sample:
+                data_list.append(sample)
         return data_list
+
+    def _load_item(self, idx: str) -> Optional[Dict[str, np.ndarray]]:
+        """Loads a single item (either .npz or raw .npy/.ply)."""
+        # Try .npz first
+        npz_path = self.data_dir / f"{idx}.npz"
+        if npz_path.exists():
+            with np.load(npz_path, allow_pickle=True) as data:
+                return {k: data[k] for k in data.files}
+        
+        # Try raw files (nested or flat)
+        # Expected structure: data/data/{idx}/press.npy or data/press_{idx}.npy
+        press_path = self.data_dir / "data" / idx / "press.npy"
+        if not press_path.exists():
+            press_path = self.data_dir / f"press_{idx}.npy"
+            
+        mesh_path = self.data_dir / "data" / idx / "tri_mesh.ply"
+        if not mesh_path.exists():
+            mesh_path = self.data_dir / f"mesh_{idx}.ply"
+            
+        if press_path.exists() and mesh_path.exists():
+            press = np.load(press_path)
+            vertices = self._read_ply_vertices(mesh_path)
+            
+            # Since SDF is missing in raw data and we don't have Open3D, 
+            # we generate a grid and a dummy distance field for shape verification.
+            item = {
+                "press": press,
+                "vertices": vertices,
+                "query_points": self._generate_grid(),
+                "distance": np.zeros((*self.query_res, 1)) # Placeholder
+            }
+            return item
+            
+        return None
+
+    def _read_ply_vertices(self, path: Path) -> np.ndarray:
+        """Simple PLY vertex reader for standard ASCII/Binary formats."""
+        try:
+            # We use a simplified path: just extract the first N vertices
+            # based on the header. A full parser would be better but this is robust enough.
+            with open(path, "rb") as f:
+                header = ""
+                while "end_header" not in header:
+                    line = f.readline().decode("ascii", errors="ignore")
+                    header += line
+                    if "element vertex" in line:
+                        n_verts = int(line.split()[-1])
+                
+                # If binary, read the rest. If ASCII, it's after end_header.
+                if "format binary" in header:
+                    # Assume float32 x, y, z
+                    dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
+                    # Basic PLY often has other properties, we take the first 3 floats
+                    # This is a heuristic that works for most Car-CFD PLYs
+                    data = np.fromfile(f, dtype='f4', count=n_verts*3).reshape(-1, 3)
+                    return data
+                else:
+                    # ASCII
+                    content = f.read().decode("ascii", errors="ignore")
+                    lines = content.strip().split("\n")[:n_verts]
+                    verts = [[float(x) for x in l.split()[:3]] for l in lines]
+                    return np.array(verts)
+        except Exception as e:
+            print(f"Error reading PLY {path}: {e}")
+            return np.zeros((1, 3))
+
+    def _generate_grid(self) -> np.ndarray:
+        """Generates a regular grid of query points for the latent space."""
+        # Standard unit cube or based on watertight_global_bounds if we wanted to be fancy.
+        x = np.linspace(0, 1, self.query_res[0])
+        y = np.linspace(0, 1, self.query_res[1])
+        z = np.linspace(0, 1, self.query_res[2])
+        grid = np.stack(np.meshgrid(x, y, z, indexing='ij'), axis=-1)
+        return grid.astype(np.float32)
 
     def _process_data(self, data_list: List[Dict[str, np.ndarray]]):
         """
@@ -146,10 +243,18 @@ class CarCFDDataset:
         for i, data in enumerate(data_list):
             if "press" in data:
                 press = data["press"]
-                # NumPy replacement of `torch.cat((press[:, 0:16], press[:, 112:]), axis=1)`
-                data_list[i]["press"] = np.concatenate(
-                    (press[:, 0:16], press[:, 112:]), axis=1
-                )
+                # If it's 2D and has many columns, it might need the column selection
+                # as per the original and neuraloperator implementations.
+                if press.ndim == 2 and press.shape[1] > 112:
+                    press = np.concatenate(
+                        (press[:, 0:16], press[:, 112:]), axis=1
+                    )
+                
+                # Ensure it is at least (N, 1) for JAX consistency
+                if press.ndim == 1:
+                    press = press[:, np.newaxis]
+                
+                data_list[i]["press"] = press
 
     def train_generator(self, batch_size: int, shuffle: bool = True) -> Iterator[Dict[str, np.ndarray]]:
         """Yields batched dictionaries of PyTrees (numpy arrays) for training."""

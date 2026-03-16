@@ -6,7 +6,7 @@ from flax import linen as nn
 from .channel_mlp import LinearChannelMLP
 
 
-def segment_csr(data, splits, reduction="sum", valid_counts=None):
+def segment_csr_jax(data, splits, reduction="sum", valid_counts=None):
     """
     JAX equivalent of segment_csr for CSR neighborhoods.
     
