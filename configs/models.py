@@ -168,13 +168,14 @@ class FNO_Medium2D(SimpleFNOConfig):
     The default workhorse for most 2D operator-learning tasks such
     as Poisson, Darcy, etc.
     """
-    n_modes: tuple = (24, 24)
-    hidden_channels: int = 128
+    n_modes: tuple = (32, 32)
+    hidden_channels: int = 64
     n_layers: int = 4
-    in_channels: int = 3
+    in_channels: int = 1
     out_channels: int = 1
-    use_grid: bool = False
-    use_norm: bool = True
+    use_grid: bool = True
+    use_norm: bool = False
+    projection_channel_ratio: int = 4
 
 
 @dataclass
