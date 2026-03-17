@@ -66,10 +66,10 @@ def lp_loss(pred: jnp.ndarray, target: jnp.ndarray, p: int = 2) -> jnp.ndarray:
     diff_norm = jnp.linalg.norm(diff, ord=p, axis=1)
     targ_norm = jnp.linalg.norm(targ, ord=p, axis=1)
     
-    # 3. Return mean relative error over batch
+    # 3. Return sum relative error over batch (reference default)
     # Divides the error magnitude by the target magnitude for each sample, 
-    # then averages those percentages across the entire batch.
-    return jnp.mean(diff_norm / (targ_norm + 1e-8))
+    # then sums those percentages across the entire batch.
+    return jnp.sum(diff_norm / (targ_norm + 1e-8))
 
 
 def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.ndarray:
@@ -111,11 +111,20 @@ def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.nd
     # Using jnp.roll to shift the grid left/right/up/down. 
     # Subtracting the shifts gives us the slope/gradient at every point.
     
-    # X-Gradient (axis 1: e.g., Vertical Slope)
+    # Grid spacing scaling factor: 1/(2h) squared.
+    # For a domain of size [0, 1], h = 1/N. 
+    # Reference FiniteDiff weights gradients by 1/h.
+    # We use h=1/N for a domain of size 1.0.
+    # Weighting factors for x and y gradients based on resolution.
+    nx, ny = pred.shape[1], pred.shape[2]
+    h_x, h_y = 1.0 / nx, 1.0 / ny
+    w_x, w_y = 1.0 / (4 * h_x**2), 1.0 / (4 * h_y**2)
+    
+    # X-Gradient (axis 1)
     dx_pred = jnp.roll(pred, -1, axis=1) - jnp.roll(pred, 1, axis=1)
     dx_target = jnp.roll(target, -1, axis=1) - jnp.roll(target, 1, axis=1)
     
-    # Y-Gradient (axis 2: e.g., Horizontal Slope)
+    # Y-Gradient (axis 2)
     dy_pred = jnp.roll(pred, -1, axis=2) - jnp.roll(pred, 1, axis=2)
     dy_target = jnp.roll(target, -1, axis=2) - jnp.roll(target, 1, axis=2)
 
@@ -125,12 +134,12 @@ def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.nd
     dy_diff_flat = (dy_pred - dy_target).reshape(pred.shape[0], -1)
     dy_target_flat = dy_target.reshape(pred.shape[0], -1)
 
-    # Sum of squared differences for the X and Y gradients
-    diff_dx = jnp.sum(dx_diff_flat ** 2, axis=-1)
-    ynorm_dx = jnp.sum(dx_target_flat ** 2, axis=-1)
+    # Sum of squared differences for the X and Y gradients, weighted by grid spacing
+    diff_dx = w_x * jnp.sum(dx_diff_flat ** 2, axis=-1)
+    ynorm_dx = w_x * jnp.sum(dx_target_flat ** 2, axis=-1)
     
-    diff_dy = jnp.sum(dy_diff_flat ** 2, axis=-1)
-    ynorm_dy = jnp.sum(dy_target_flat ** 2, axis=-1)
+    diff_dy = w_y * jnp.sum(dy_diff_flat ** 2, axis=-1)
+    ynorm_dy = w_y * jnp.sum(dy_target_flat ** 2, axis=-1)
 
     # ==================================================================
     # Phase 4: Final Sobolev Consolidation

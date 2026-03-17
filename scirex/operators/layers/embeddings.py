@@ -41,7 +41,7 @@ class GridEmbedding(nn.Module):
                         Set to True for non-periodic domains (closed interval [start, end]).
     """
     grid_boundaries: Tuple[Tuple[float, float], ...] = ((0.0, 1.0), (0.0, 1.0))
-    endpoint: bool = True
+    endpoint: bool = False
 
     @nn.compact
     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:

@@ -58,14 +58,16 @@ class FNOBlock(nn.Module):
     skip_type: Literal["identity", "linear", "soft-gating"] = "linear"
     channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
     use_channel_mlp: bool = True
+    channel_mlp_expansion: float = 0.5
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jnp.ndarray, is_last: bool = False) -> jnp.ndarray:
         # Step 1: Global feature extraction via Spectral Convolution
         y_s = SpectralConv(
             in_channels=self.hidden_channels, 
             out_channels=self.hidden_channels, 
-            n_modes=self.n_modes
+            n_modes=self.n_modes,
+            bias=True
         )(x)
         
         # Step 2: Local feature extraction via Spatial Skip Connection
@@ -75,30 +77,35 @@ class FNOBlock(nn.Module):
         )(x)
         
         # Step 3: Branch fusion and stabilization
-        x = y_s + y_p
+        x_block = y_s + y_p
         
         if self.use_norm:
-            x = nn.InstanceNorm()(x)
+            x_block = nn.InstanceNorm()(x_block)
         
-        x = self.activation(x)
+        # Internal activation (always applied between branches)
+        x_block = self.activation(x_block)
 
         # Step 4: Point-wise refinement (Channel MLP)
-        # Often referred to as the 'modern' FNO variant or 'FNO-MLP'
         if self.use_channel_mlp:
             y_mlp = ChannelMLP(
                 out_channels=self.hidden_channels,
-                hidden_channels=self.hidden_channels,
+                hidden_channels=int(self.hidden_channels * self.channel_mlp_expansion),
                 n_layers=2,
                 activation=self.activation
-            )(x)
+            )(x_block)
             
+            # CRITICAL: In neuralop, the MLP skip source is the ORIGINAL block input x
+            # providing a deep residual path.
             y_skip = SkipConnection(
                 out_channels=self.hidden_channels,
                 skip_type=self.channel_mlp_skip
             )(x)
             
-            x = y_mlp + y_skip
-            x = self.activation(x)
+            x_block = y_mlp + y_skip
+            
+            # Trailing activation: neuralop omits this on the very last FNO layer
+            if not is_last:
+                x_block = self.activation(x_block)
 
-        return x
+        return x_block
 
