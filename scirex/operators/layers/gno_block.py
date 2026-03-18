@@ -89,6 +89,8 @@ class GNOBlock(nn.Module):
             transform_type=self.transform_type,
             weighting_fn=self.weighting_fn,
             reduction=self.reduction,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels
         )
 
     # =============================
