@@ -7,16 +7,51 @@ from .channel_mlp import LinearChannelMLP
 from .integral_transform import IntegralTransform
 from .neighbor_search import NeighborSearch
 from .embeddings import SinusoidalEmbedding
+from .gno_weighting_functions import dispatch_weighting_fn
 
 
 class GNOBlock(nn.Module):
+    """Graph Neural Operator block with optional mollified weighting.
+
+    Combines neighbor search, positional embeddings, and a kernel
+    integral transform to compute a single GNO layer.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input feature channels.
+    out_channels : int
+        Number of output feature channels.
+    coord_dim : int
+        Spatial dimensionality of the point coordinates.
+    radius : float
+        Neighborhood search radius.
+    transform_type : str
+        Integral transform variant: ``"linear"``, ``"nonlinear"``,
+        ``"nonlinear_kernelonly"``.
+    weighting_fn : str or None
+        Name of a cutoff weighting function from the registry
+        (``"bump"``, ``"half_cos"``, ``"quadr"``, ``"quartic"``,
+        ``"octic"``).  When set, neighbor distances are weighted by
+        the chosen function before aggregation and reduction is
+        forced to ``"sum"`` (Nyström-style quadrature).
+    weighting_fn_scale : float
+        Multiplicative scale passed to the weighting function.
+    reduction : ``"sum"`` or ``"mean"``
+        How to aggregate neighbor contributions (overridden to
+        ``"sum"`` when ``weighting_fn`` is set).
+    max_neighbors : int
+        Maximum number of neighbors per query point.
+    """
+
     in_channels: int
     out_channels: int
     coord_dim: int
     radius: float
 
     transform_type: str = "linear"
-    weighting_fn: Optional[Callable] = None
+    weighting_fn: Optional[str] = None
+    weighting_fn_scale: float = 1.0
     reduction: Literal["sum", "mean"] = "sum"
 
     pos_embedding_type: Optional[str] = "transformer"
@@ -30,9 +65,21 @@ class GNOBlock(nn.Module):
     use_torch_scatter_reduce: bool = True
     use_open3d_neighbor_search: bool = True  # ignored in JAX
 
-    max_neighbors: int = 12  # NEW
+    max_neighbors: int = 12
 
     def setup(self):
+        # =========================
+        # Resolve weighting function
+        # =========================
+        if self.weighting_fn is not None:
+            resolved_weighting_fn = dispatch_weighting_fn(
+                weight_function_name=self.weighting_fn,
+                sq_radius=self.radius,
+                scale=self.weighting_fn_scale,
+            )
+        else:
+            resolved_weighting_fn = None
+
         # =========================
         # Positional embedding
         # =========================
@@ -52,7 +99,7 @@ class GNOBlock(nn.Module):
         # =========================
         self.neighbor_search = NeighborSearch(
             max_neighbors=self.max_neighbors,
-            return_norm=self.weighting_fn is not None
+            return_norm=resolved_weighting_fn is not None,
         )
 
         # =========================
@@ -87,10 +134,10 @@ class GNOBlock(nn.Module):
         self.integral_transform = IntegralTransform(
             channel_mlp=mlp,
             transform_type=self.transform_type,
-            weighting_fn=self.weighting_fn,
+            weighting_fn=resolved_weighting_fn,
             reduction=self.reduction,
             in_channels=self.in_channels,
-            out_channels=self.out_channels
+            out_channels=self.out_channels,
         )
 
     # =============================
@@ -98,11 +145,21 @@ class GNOBlock(nn.Module):
     # =============================
     def __call__(self, y, x, f_y=None):
         """
-        y: [n, coord_dim]
-        x: [m, coord_dim]
-        f_y: [batch, n, in_channels] or [n, in_channels]
-        """
+        Parameters
+        ----------
+        y : jnp.ndarray of shape ``[n, coord_dim]``
+            Source (data) point coordinates.
+        x : jnp.ndarray of shape ``[m, coord_dim]``
+            Query point coordinates.
+        f_y : jnp.ndarray of shape ``[batch, n, in_channels]`` or
+              ``[n, in_channels]``, optional
+            Input function values defined on the source points.
 
+        Returns
+        -------
+        jnp.ndarray of shape ``[batch, m, out_channels]`` or
+        ``[m, out_channels]``
+        """
         neighbors = self.neighbor_search(
             data=y,
             queries=x,

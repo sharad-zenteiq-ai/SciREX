@@ -60,6 +60,9 @@ class IntegralTransform(nn.Module):
     weighting_fn: Optional[Callable] = None
     reduction: str = "sum"
 
+    in_channels: Optional[int] = None
+    out_channels: Optional[int] = None
+
     def setup(self):
         assert self.channel_mlp is not None or self.channel_mlp_layers is not None
 
@@ -68,6 +71,12 @@ class IntegralTransform(nn.Module):
                 layers=self.channel_mlp_layers,
                 activation=self.channel_mlp_non_linearity,
             )
+        
+        # Add a projection layer if in_channels != out_channels for linear/nonlinear transforms
+        if self.in_channels is not None and self.out_channels is not None and self.in_channels != self.out_channels:
+            self.projection = nn.Dense(self.out_channels, use_bias=False)
+        else:
+            self.projection = None
 
     def __call__(self, y, neighbors, x=None, f_y=None, weights=None):
             if x is None:
@@ -105,29 +114,50 @@ class IntegralTransform(nn.Module):
             if f_y is not None and self.transform_type != "nonlinear_kernelonly":
                 if rep.ndim == 2 and batched:
                     rep = jnp.broadcast_to(rep, (batch_size,) + rep.shape)
-                rep = rep * in_features
+                
+                # Project in_features if channels don't match (Integral kernel is element-wise)
+                if self.projection is not None:
+                    # Apply projection to in_features which has shape (..., in_channels)
+                    # to match rep shape (..., out_channels)
+                    in_features_proj = self.projection(in_features)
+                else:
+                    in_features_proj = in_features
+                    
+                rep = rep * in_features_proj
     
             # 3. GLOBAL MASKING (Moved outside f_y check)
             # This ensures radius constraints are applied even if f_y is None
             if mask is not None:
                 if batched:
-                    rep = rep * mask.reshape(batch_size, -1, 1)
+                    rep = rep * mask[None, :, None]
                 else:
                     rep = rep * mask[:, None]
     
             # 4. Handle weights
-            nbr_weights = neighbors.get("weights")
-            if nbr_weights is None: nbr_weights = weights
-    
+            # Robust lookup: check for 'weights' or 'neighbors_distance' (distances used as weights)
+            nbr_weights = neighbors.get("weights", neighbors.get("neighbors_distance"))
+            if nbr_weights is None:
+                nbr_weights = weights
+
+            # Guard: weighting function requires distance weights
+            if nbr_weights is None and self.weighting_fn is not None:
+                raise KeyError(
+                    "If a weighting function is provided, your neighborhoods "
+                    "must contain weights. Ensure NeighborSearch is created "
+                    "with return_norm=True."
+                )
+
             if nbr_weights is not None:
-                if batched: nbr_weights = nbr_weights[None, :, None]
-                else: nbr_weights = nbr_weights[:, None]
-    
+                if batched:
+                    nbr_weights = nbr_weights[None, :, None]
+                else:
+                    nbr_weights = nbr_weights[:, None]
+
                 if self.weighting_fn is not None:
                     nbr_weights = self.weighting_fn(nbr_weights)
-    
+
                 rep = rep * nbr_weights
-                reduction = "sum"
+                reduction = "sum"  # Force sum reduction for weighted GNO layers
             else:
                 reduction = self.reduction
     
