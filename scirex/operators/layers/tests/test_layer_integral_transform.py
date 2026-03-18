@@ -22,101 +22,157 @@
 # For any clarifications or special considerations,
 # please contact: contact@scirex.org
 
-"""
-Unit tests for IntegralTransform.
 
-Tests are written in N-D style so the layer works for
-arbitrary spatial dimensionalities.
+"""
+Unit tests for IntegralTransform (CSR-based version).
+
+Tests focus on:
+- Forward pass correctness
+- Shape consistency
 """
 
 import jax
 import jax.numpy as jnp
 import pytest
+from flax import linen as nn
 
 from scirex.operators.layers.integral_transform import IntegralTransform
 
 
-# Forward pass without f_y
+# Helper: simple MLP
+
+class SimpleMLP(nn.Module):
+    out_channels: int
+
+    @nn.compact
+    def __call__(self, x):
+        return nn.Dense(self.out_channels)(x)
+
+
+
+# Helper: build neighbors
+
+def build_neighbors(num_nodes, K):
+    idx = jnp.tile(jnp.arange(K), (num_nodes, 1)) % num_nodes
+    splits = jnp.arange(0, (num_nodes * K) + 1, K)
+    mask = jnp.ones((num_nodes, K))
+
+    return {
+        "neighbors_index": idx,
+        "neighbors_row_splits": splits,
+        "neighbors_mask": mask,
+    }
+
+
+
+# Forward pass
 
 @pytest.mark.parametrize(
-    "spatial_shape",
+    "num_nodes, in_channels, out_channels, K",
     [
-        (16, 16),        # 2D
-        (8, 8, 8),       # 3D
+        (8, 4, 6, 2),
+        (16, 3, 5, 3),
     ],
 )
-
-def test_integral_transform_forward_nd(spatial_shape):
-    """IntegralTransform should run and preserve spatial shape."""
-
+def test_integral_transform_forward(num_nodes, in_channels, out_channels, K):
     rng = jax.random.PRNGKey(0)
 
-    batch = 2
+    y = jnp.ones((num_nodes, in_channels))
+    neighbors = build_neighbors(num_nodes, K)
+
+    model = IntegralTransform(
+        channel_mlp=SimpleMLP(out_channels),
+        in_channels=in_channels,
+        out_channels=out_channels,
+    )
+
+    params = model.init(rng, y, neighbors)
+    out = model.apply(params, y, neighbors)
+
+    assert out.shape == (num_nodes, out_channels)
+
+
+
+# Forward with f_y
+
+@pytest.mark.parametrize(
+    "num_nodes, in_channels, out_channels, K",
+    [
+        (10, 4, 6, 2),
+        (12, 5, 7, 3),
+    ],
+)
+def test_integral_transform_with_fy(num_nodes, in_channels, out_channels, K):
+    rng = jax.random.PRNGKey(0)
+
+    y = jnp.ones((num_nodes, in_channels))
+    f_y = jnp.ones((num_nodes, in_channels))
+
+    neighbors = build_neighbors(num_nodes, K)
+
+    model = IntegralTransform(
+        channel_mlp=SimpleMLP(out_channels),
+        in_channels=in_channels,
+        out_channels=out_channels,
+    )
+
+    params = model.init(rng, y, neighbors, f_y=f_y)
+    out = model.apply(params, y, neighbors, f_y=f_y)
+
+    assert out.shape == (num_nodes, out_channels)
+
+
+# Mask handling
+
+def test_integral_transform_with_mask():
+    rng = jax.random.PRNGKey(0)
+
+    num_nodes = 8
     in_channels = 4
-    channels = 6
+    out_channels = 6
+    K = 2
 
-    x = jnp.ones((batch, *spatial_shape, in_channels))
+    y = jnp.ones((num_nodes, in_channels))
+    neighbors = build_neighbors(num_nodes, K)
 
-    model = IntegralTransform(channels=channels)
+    neighbors["neighbors_mask"] = jnp.array([[1, 0]] * num_nodes)
 
-    params = model.init(rng, x)
-    y = model.apply(params, x)
+    model = IntegralTransform(
+        channel_mlp=SimpleMLP(out_channels),
+        in_channels=in_channels,
+        out_channels=out_channels,
+        reduction="mean",
+    )
 
-    assert y.shape == (batch, *spatial_shape, channels)
+    params = model.init(rng, y, neighbors)
+    out = model.apply(params, y, neighbors)
+
+    assert out.shape == (num_nodes, out_channels)
 
 
-# Forward pass with f_y
 
-@pytest.mark.parametrize(
-    "spatial_shape",
-    [
-        (12, 12),
-        (6, 6, 6),
-    ],
-)
+# Weight handling
 
-def test_integral_transform_with_fy(spatial_shape):
-    """IntegralTransform should handle f_y branch."""
-
+def test_integral_transform_with_weights():
     rng = jax.random.PRNGKey(0)
 
-    batch = 2
-    in_channels = 5
-    channels = 7
+    num_nodes = 8
+    in_channels = 4
+    out_channels = 6
+    K = 2
 
-    x = jnp.ones((batch, *spatial_shape, in_channels))
-    f_y = jnp.ones((batch, *spatial_shape, channels))
+    y = jnp.ones((num_nodes, in_channels))
+    neighbors = build_neighbors(num_nodes, K)
 
-    model = IntegralTransform(channels=channels)
+    weights = jnp.ones((num_nodes * K,))
 
-    params = model.init(rng, x)
+    model = IntegralTransform(
+        channel_mlp=SimpleMLP(out_channels),
+        in_channels=in_channels,
+        out_channels=out_channels,
+    )
 
-    y = model.apply(params, x, f_y=f_y)
+    params = model.init(rng, y, neighbors, weights=weights)
+    out = model.apply(params, y, neighbors, weights=weights)
 
-    assert y.shape == (batch, *spatial_shape, channels)
-
-
-# Different channel configurations
-
-@pytest.mark.parametrize(
-    "channels",
-    [4, 8, 12],
-)
-
-def test_integral_transform_channel_variations(channels):
-    """IntegralTransform should support different channel sizes."""
-
-    rng = jax.random.PRNGKey(0)
-
-    batch = 2
-    spatial_shape = (16, 16)
-    in_channels = 3
-
-    x = jnp.ones((batch, *spatial_shape, in_channels))
-
-    model = IntegralTransform(channels=channels)
-
-    params = model.init(rng, x)
-    y = model.apply(params, x)
-
-    assert y.shape == (batch, *spatial_shape, channels)
+    assert out.shape == (num_nodes, out_channels)
