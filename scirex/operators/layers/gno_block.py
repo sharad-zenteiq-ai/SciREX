@@ -143,7 +143,7 @@ class GNOBlock(nn.Module):
     # =============================
     # Forward
     # =============================
-    def __call__(self, y, x, f_y=None):
+    def __call__(self, y, x, f_y=None, neighbors=None):
         """
         Parameters
         ----------
@@ -154,17 +154,21 @@ class GNOBlock(nn.Module):
         f_y : jnp.ndarray of shape ``[batch, n, in_channels]`` or
               ``[n, in_channels]``, optional
             Input function values defined on the source points.
+        neighbors : dict, optional
+            Pre-calculated neighbor search results. If None, neighbor search
+            will be performed internally.
 
         Returns
         -------
         jnp.ndarray of shape ``[batch, m, out_channels]`` or
         ``[m, out_channels]``
         """
-        neighbors = self.neighbor_search(
-            data=y,
-            queries=x,
-            radius=self.radius,
-        )
+        if neighbors is None:
+            neighbors = self.neighbor_search(
+                data=y,
+                queries=x,
+                radius=self.radius,
+            )
 
         if self.pos_embedding is not None:
             y_embed = self.pos_embedding(y)

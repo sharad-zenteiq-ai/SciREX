@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import urllib.request
 import numpy as np
+import scipy.spatial
 import jax.numpy as jnp
 
 
@@ -37,7 +38,6 @@ def download_from_zenodo_record(record_id: str, root: Path):
                 with tarfile.open(file_path, mode) as t:
                     t.extractall(root)
 
-
 # --------------------------------------------------
 # 🔽 JAX Dataset (NO MeshDataModule)
 # --------------------------------------------------
@@ -49,12 +49,27 @@ class CarCFDDataset:
         n_test: int = 1,
         query_res: List[int] = [32, 32, 32],
         download: bool = True,
-        max_vertices: int = 4096,   # ⚠️ IMPORTANT for JAX
+        max_vertices: int = 4096,
+        max_neighbors: int = 12,
+        in_gno_radius: float = 0.05,
+        out_gno_radius: float = 0.05,
+        neighbor_cache_dir: Optional[str] = "./scirex/operators/data/neighbor_cache",
+        use_cache: bool = True,
     ):
         self.root_dir = Path(root_dir).expanduser().resolve()
         self.query_res = query_res
         self.max_vertices = max_vertices
         self.zenodo_record_id = "13936501"
+
+        # Neighbor search properties
+        self.max_neighbors = max_neighbors
+        self.in_gno_radius = in_gno_radius
+        self.out_gno_radius = out_gno_radius
+        self.use_cache = use_cache
+        self.neighbor_cache_dir = Path(neighbor_cache_dir).expanduser().resolve() if neighbor_cache_dir else None
+        
+        if self.use_cache and self.neighbor_cache_dir:
+            self.neighbor_cache_dir.mkdir(parents=True, exist_ok=True)
 
         if not self.root_dir.exists():
             self.root_dir.mkdir(parents=True)
@@ -64,8 +79,8 @@ class CarCFDDataset:
 
         self.base_dir, self.data_dir = self._find_data_dir()
 
-        self.train_data = self._load_split("train.txt", n_train)
-        self.test_data = self._load_split("test.txt", n_test)
+        self.train_data = self._load_split("train.txt", idx_split="train", n_samples=n_train)
+        self.test_data = self._load_split("test.txt", idx_split="test", n_samples=n_test)
 
     # --------------------------------------------------
     def _find_data_dir(self):
@@ -82,7 +97,7 @@ class CarCFDDataset:
         raise RuntimeError("Dataset structure not found")
 
     # --------------------------------------------------
-    def _load_split(self, split_file, n_samples):
+    def _load_split(self, split_file, idx_split, n_samples):
         path = self.base_dir / split_file
 
         with open(path) as f:
@@ -90,26 +105,59 @@ class CarCFDDataset:
 
         data = []
         for idx in indices[:n_samples]:
-            item = self._load_item(idx)
+            item = self._load_item(idx, f"{idx_split}_{idx}")
             if item:
                 data.append(item)
 
         return data
 
     # --------------------------------------------------
-    def _load_item(self, idx: str) -> Optional[Dict]:
+    def _load_item(self, idx: str, cache_idx: str) -> Optional[Dict]:
+        """Loads a single item (either .npz or raw .npy/.ply) with padding for JAX."""
+        # --- 1. Attempt .npz Load ---
         npz_path = self.data_dir / f"{idx}.npz"
+        item = None
 
-        if not npz_path.exists():
+        if npz_path.exists():
+            with np.load(npz_path, allow_pickle=True) as data:
+                item = {k: data[k] for k in data.files}
+        else:
+            # --- 2. Fallback to Raw PLY/NPY ---
+            # Try nested: data/<idx>/press.npy OR flat: press_<idx>.npy
+            press_path = self.data_dir / "data" / idx / "press.npy"
+            if not press_path.exists():
+                press_path = self.data_dir / f"press_{idx}.npy"
+
+            mesh_path = self.data_dir / "data" / idx / "tri_mesh.ply"
+            if not mesh_path.exists():
+                mesh_path = self.data_dir / f"mesh_{idx}.ply"
+
+            if press_path.exists() and mesh_path.exists():
+                try:
+                    import trimesh
+                    mesh = trimesh.load(mesh_path)
+                    vertices = mesh.vertices
+                    faces = mesh.faces
+                    centroids = mesh.vertices[faces].mean(axis=1)
+                    press = np.load(press_path)
+                    
+                    item = {
+                        "vertices": vertices,
+                        "press": press,
+                        "centroids": centroids
+                    }
+                except Exception as e:
+                    print(f"Error reading raw data for {idx}: {e}")
+                    return None
+
+        if item is None:
             return None
-
-        with np.load(npz_path, allow_pickle=True) as data:
-            item = {k: data[k] for k in data.files}
 
         vertices = item["vertices"]
         press = item["press"]
+        centroids = item.get("centroids")
 
-        # 🔥 EXACT same logic as torch version
+        # 🔥 EXACT same logic as torch version for pressure columns
         if press.ndim == 2 and press.shape[1] > 112:
             press = np.concatenate((press[:, 0:16], press[:, 112:]), axis=1)
 
@@ -119,15 +167,73 @@ class CarCFDDataset:
         # 🔴 CRITICAL: Fix size for JAX
         vertices = self._pad(vertices)
         press = self._pad(press)
+        if centroids is not None:
+            centroids = self._pad(centroids)
 
         query_points = self._generate_grid()
         distance = np.zeros((*self.query_res, 1), dtype=np.float32)
 
-        return {
+        sample = {
             "vertices": vertices.astype(np.float32),
             "press": press.astype(np.float32),
             "query_points": query_points,
             "distance": distance,
+        }
+        if centroids is not None:
+            sample["centroids"] = centroids.astype(np.float32)
+
+        # --- Add Neighbors to Sample ---
+        if self.use_cache:
+            sample = self._add_neighbors(sample, cache_idx)
+            
+        return sample
+
+    def _add_neighbors(self, sample: Dict, cache_idx: str) -> Dict:
+        """Adds pre-calculated neighbors with caching."""
+        cache_id = f"{cache_idx}_v{self.max_vertices}_n{self.max_neighbors}_rin{self.in_gno_radius}_rout{self.out_gno_radius}"
+        cache_path = self.neighbor_cache_dir / f"{cache_id}.npz"
+
+        if cache_path.exists():
+            with np.load(cache_path, allow_pickle=True) as cached:
+                sample["in_neighbors"] = {k.replace("in_", ""): cached[k] for k in cached.files if k.startswith("in_")}
+                sample["out_neighbors"] = {k.replace("out_", ""): cached[k] for k in cached.files if k.startswith("out_")}
+            return sample
+
+        # 1. In (Mesh -> Grid)
+        in_nb = self._compute_neighbors_kdtree(
+            data=sample["vertices"],
+            queries=sample["query_points"].reshape(-1, 3),
+            radius=self.in_gno_radius
+        )
+
+        # 2. Out (Grid -> Mesh)
+        # We query at centroids to match face-based pressure targets if available
+        out_queries = sample.get("centroids", sample["vertices"])
+        out_nb = self._compute_neighbors_kdtree(
+            data=sample["query_points"].reshape(-1, 3),
+            queries=out_queries,
+            radius=self.out_gno_radius
+        )
+
+        # Save
+        save_dict = {f"in_{k}": v for k, v in in_nb.items()}
+        save_dict.update({f"out_{k}": v for k, v in out_nb.items()})
+        np.savez(cache_path, **save_dict)
+
+        sample["in_neighbors"] = in_nb
+        sample["out_neighbors"] = out_nb
+        return sample
+
+    def _compute_neighbors_kdtree(self, data, queries, radius):
+        tree = scipy.spatial.KDTree(data)
+        d, i = tree.query(queries, k=self.max_neighbors, distance_upper_bound=radius)
+        mask = (i < len(data))
+        valid_indices = np.where(mask, i, 0).astype(np.int32)
+        return {
+            "neighbors_index": valid_indices,
+            "neighbors_mask": mask,
+            "neighbors_row_splits": np.arange(0, (queries.shape[0]+1)*self.max_neighbors, self.max_neighbors).astype(np.int32),
+            "neighbors_distance": d.astype(np.float32)
         }
 
     # --------------------------------------------------
@@ -159,11 +265,21 @@ class CarCFDDataset:
             batch_idx = idxs[i:i+batch_size]
 
             batch = {}
+            # We assume all samples have the same keys
             for k in data[0].keys():
-                batch[k] = np.stack([data[j][k] for j in batch_idx], axis=0)
+                val0 = data[batch_idx[0]][k]
+                
+                if isinstance(val0, dict):
+                    # Handle nested neighbor dicts
+                    batch[k] = {}
+                    for sub_k in val0.keys():
+                        batch[k][sub_k] = np.stack([data[j][k][sub_k] for j in batch_idx], axis=0)
+                else:
+                    batch[k] = np.stack([data[j][k] for j in batch_idx], axis=0)
 
-            # 🔥 convert to JAX
-            yield {k: jnp.array(v) for k, v in batch.items()}
+            # 🔥 convert everything recursively to JAX
+            import jax
+            yield jax.tree_util.tree_map(lambda x: jnp.array(x) if isinstance(x, (np.ndarray, list)) else x, batch)
 def load_mini_car():
     """
     JAX-compatible mini dataset loader

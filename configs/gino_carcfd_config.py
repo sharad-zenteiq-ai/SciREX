@@ -52,16 +52,17 @@ class GINOCarCFDConfig:
     scheduler_gamma: float = 0.5
 
     # ── Data Parameters ──
-    data_root: str = "~/data/car-pressure-data/processed-car-pressure-data"
+    data_root: str = "./scirex/operators/data/car_cfd_data"
     query_res: list = field(default_factory=lambda: [32, 32, 32])
     n_train: int = 500
     n_test: int = 20
     download: bool = True
 
+    # ── Neighbor Search Cache ──
+    neighbor_cache_dir: str = "./scirex/operators/data/neighbor_cache"
+
     # ── Logging ──
-    wandb_log: bool = True
-    wandb_project: str = "gino-car-cfd"
-    wandb_entity: Optional[str] = "gazania-zenteiq"
+    wandb_log: bool = False
 
     # ── Convenience properties ──
     @property
@@ -107,3 +108,11 @@ class GINOCarCFDConfig:
     @property
     def out_gno_transform_type(self):
         return self.model.out_gno_transform_type
+
+    @property
+    def max_neighbors(self):
+        return self.model.max_neighbors
+
+    @property
+    def use_neighbor_cache(self):
+        return self.model.use_neighbor_cache

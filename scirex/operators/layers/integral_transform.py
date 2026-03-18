@@ -10,42 +10,37 @@ def segment_csr_jax(data, splits, reduction="sum", valid_counts=None):
     """
     JAX equivalent of segment_csr for CSR neighborhoods.
     
-    data: (E, C) or (B, E, C) where E is total edges (m * max_neighbors)
-    splits: (M+1,) or (B, M+1) where M is number of queries
-    reduction: "sum" or "mean"
-    valid_counts: (M,) or (B, M) the actual number of neighbors within radius
+    This version is optimized for JIT-safety in fixed-size neighborhoods.
     """
-    # 1. Determine number of segments (queries)
     num_segments = splits.shape[-1] - 1
     
     if data.ndim == 2:
         # --- Unbatched Case ---
-        # Generate row indices for each edge: [0, 0, 0, 1, 1, 1, ...]
-        row_ids = jnp.repeat(
-            jnp.arange(num_segments),
-            splits[1:] - splits[:-1],
-            total_repeat_length=data.shape[0]
-        )
+        # Instead of using splits (which can be a tracer), we use the total edge count 
+        # and assume a fixed-size neighborhood for JIT shape stability.
+        num_edges = data.shape[0]
+        K = num_edges // num_segments
         
-        # Perform the sum
+        # row_ids becomes [0,0,0, 1,1,1, ...] etc.
+        # Repeating with a static integer K is JIT-safe.
+        row_ids = jnp.repeat(jnp.arange(num_segments), K)
+        
+        # Perform segment sum
         summed = jax.ops.segment_sum(data, row_ids, num_segments)
         
         if reduction == "sum":
             return summed
         
-        # For mean, divide by actual valid neighbors (not max_neighbors)
+        # For mean, divide by actual valid neighbors
         if valid_counts is not None:
-            # Use max(1, count) to avoid division by zero for empty neighborhoods
             denominator = jnp.maximum(valid_counts, 1.0)[:, None]
         else:
-            # Fallback to dividing by the fixed segment size
-            denominator = (splits[1:] - splits[:-1])[:, None]
+            denominator = jnp.full((num_segments, 1), K)
             
         return summed / denominator
 
     else:
         # --- Batched Case ---
-        # Use vmap to handle the batch dimension efficiently
         return jax.vmap(
             lambda d, s, v: segment_csr_jax(d, s, reduction, v)
         )(data, splits, valid_counts)
@@ -79,104 +74,121 @@ class IntegralTransform(nn.Module):
             self.projection = None
 
     def __call__(self, y, neighbors, x=None, f_y=None, weights=None):
-            if x is None:
-                x = y
-    
-            idx = neighbors["neighbors_index"]
-            splits = neighbors["neighbors_row_splits"]
-            mask = neighbors.get("neighbors_mask") # [E] or [B, E]
-    
-            rep_features = y[idx] 
-            batched = False
-            batch_size = 1
+        if x is None:
+            x = y
+
+        # --- Parse Neighbors ---
+        idx = neighbors["neighbors_index"]  # Expected (M, K)
+        splits = neighbors["neighbors_row_splits"] # (M+1,)
+        mask = neighbors.get("neighbors_mask") # (M, K)
+
+        # Static neighborhood size for JIT-safety
+        K = idx.shape[-1] 
+
+        # Squeeze batch dimension from neighbors if present (static geometry assumption)
+        if idx.ndim == 3: idx = idx[0]
+        if splits.ndim == 2: splits = splits[0]
+        if mask is not None and mask.ndim == 3: mask = mask[0]
+        
+        # --- Handle Batching ---
+        batched = False
+        batch_size = 1
+        if f_y is not None and f_y.ndim == 3:
+            batched = True
+            batch_size = f_y.shape[0]
+        elif x.ndim == 3:
+            batched = True
+            batch_size = x.shape[0]
+
+        # --- Flatten Features to Edge-Wise (CSR) ---
+        # Using reshapes and static K ensures JIT compilation success
+        rep_features = y[idx].reshape(-1, y.shape[-1])
+        
+        if x.ndim == 3:
+            # Repeat each of the M points K times
+            self_features = jnp.repeat(x, K, axis=1) 
+        else:
+            self_features = jnp.repeat(x, K, axis=0)
+
+        if f_y is not None:
+            if f_y.ndim == 3:
+                in_features = f_y[:, idx, :].reshape(batch_size, -1, f_y.shape[-1])
+            else:
+                in_features = f_y[idx].reshape(-1, f_y.shape[-1])
+        else:
+            in_features = None
+
+        # --- Concatenate Features ---
+        if batched:
+            if rep_features.ndim == 2:
+                rep_features = jnp.broadcast_to(rep_features, (batch_size,) + rep_features.shape)
+            if self_features.ndim == 2:
+                self_features = jnp.broadcast_to(self_features, (batch_size,) + self_features.shape)
             
-            if f_y is not None:
-                if f_y.ndim == 3:
-                    batched = True
-                    batch_size = f_y.shape[0]
-                    in_features = f_y[:, idx, :]
-                else:
-                    in_features = f_y[idx]
-    
-            num_reps = splits[1:] - splits[:-1]
-            self_features = jnp.repeat(x, num_reps, axis=0)
             agg = jnp.concatenate([rep_features, self_features], axis=-1)
-    
-            if f_y is not None and self.transform_type in ("nonlinear_kernelonly", "nonlinear"):
-                if batched:
-                    agg = jnp.broadcast_to(agg, (batch_size,) + agg.shape)
+            if in_features is not None and self.transform_type in ("nonlinear", "nonlinear_kernelonly"):
                 agg = jnp.concatenate([agg, in_features], axis=-1)
-    
-            # 1. Compute Kernel
-            rep = self.channel_mlp(agg)
-    
-            # 2. Apply f_y if linear/nonlinear transform
-            if f_y is not None and self.transform_type != "nonlinear_kernelonly":
-                if rep.ndim == 2 and batched:
-                    rep = jnp.broadcast_to(rep, (batch_size,) + rep.shape)
-                
-                # Project in_features if channels don't match (Integral kernel is element-wise)
-                if self.projection is not None:
-                    # Apply projection to in_features which has shape (..., in_channels)
-                    # to match rep shape (..., out_channels)
-                    in_features_proj = self.projection(in_features)
-                else:
-                    in_features_proj = in_features
-                    
-                rep = rep * in_features_proj
-    
-            # 3. GLOBAL MASKING (Moved outside f_y check)
-            # This ensures radius constraints are applied even if f_y is None
-            if mask is not None:
-                if batched:
-                    rep = rep * mask[None, :, None]
-                else:
-                    rep = rep * mask[:, None]
-    
-            # 4. Handle weights
-            # Robust lookup: check for 'weights' or 'neighbors_distance' (distances used as weights)
-            nbr_weights = neighbors.get("weights", neighbors.get("neighbors_distance"))
-            if nbr_weights is None:
-                nbr_weights = weights
+        else:
+            agg = jnp.concatenate([rep_features, self_features], axis=-1)
+            if in_features is not None and self.transform_type in ("nonlinear", "nonlinear_kernelonly"):
+                agg = jnp.concatenate([agg, in_features], axis=-1)
 
-            # Guard: weighting function requires distance weights
-            if nbr_weights is None and self.weighting_fn is not None:
-                raise KeyError(
-                    "If a weighting function is provided, your neighborhoods "
-                    "must contain weights. Ensure NeighborSearch is created "
-                    "with return_norm=True."
-                )
+        # 1. Compute Kernel
+        rep = self.channel_mlp(agg)
 
-            if nbr_weights is not None:
-                if batched:
-                    nbr_weights = nbr_weights[None, :, None]
-                else:
-                    nbr_weights = nbr_weights[:, None]
-
-                if self.weighting_fn is not None:
-                    nbr_weights = self.weighting_fn(nbr_weights)
-
-                rep = rep * nbr_weights
-                reduction = "sum"  # Force sum reduction for weighted GNO layers
+        # 2. Apply f_y if linear/nonlinear transform
+        if f_y is not None and self.transform_type != "nonlinear_kernelonly":
+            # Project in_features if channels don't match
+            if self.projection is not None:
+                in_features_proj = self.projection(in_features)
             else:
-                reduction = self.reduction
-    
-            # 5. Calculate valid_counts for Mean Reduction
-            valid_counts = None
-            if reduction == "mean" and mask is not None:
-                # We need to know how many neighbors were valid per query
-                # We assume a fixed width of max_neighbors from your NeighborSearch
-                max_nb = num_reps[0] 
-                if batched:
-                    valid_counts = mask.reshape(batch_size, -1, max_nb).sum(axis=-1)
-                else:
-                    valid_counts = mask.reshape(-1, max_nb).sum(axis=-1)
-    
+                in_features_proj = in_features
+            
+            rep = rep * in_features_proj
+
+        # 3. GLOBAL MASKING
+        if mask is not None:
             if batched:
-                splits_b = jnp.broadcast_to(splits, (rep.shape[0],) + splits.shape)
+                mask_val = mask.reshape(1, -1, 1)
             else:
-                splits_b = splits
-    
-            # 6. Reduce
-            out = segment_csr_jax(rep, splits_b, reduction, valid_counts=valid_counts)
-            return out
+                mask_val = mask.reshape(-1, 1)
+            rep = rep * mask_val
+
+        # 4. Handle weights
+        nbr_weights = neighbors.get("neighbors_distance")
+        if nbr_weights is None:
+            nbr_weights = weights
+
+        if nbr_weights is not None:
+            # Reshape weights to enable multiplication [..., num_edges, 1]
+            if nbr_weights.ndim == 1:
+                nbr_weights = nbr_weights[:, None]
+            if batched and nbr_weights.ndim == 2:
+                nbr_weights = nbr_weights[None, :, :]
+            elif batched and nbr_weights.ndim == 3 and nbr_weights.shape[0] != batch_size:
+                nbr_weights = nbr_weights[0:1, :, :] # Static geometry broadcast
+                
+            if self.weighting_fn is not None:
+                nbr_weights = self.weighting_fn(nbr_weights)
+
+            rep = rep * nbr_weights
+            reduction = "sum"  
+        else:
+            reduction = self.reduction
+
+        # 5. Calculate valid_counts for Mean Reduction
+        valid_counts = None
+        if reduction == "mean" and mask is not None:
+            if batched:
+                valid_counts = mask.reshape(1, -1, K).sum(axis=-1)
+                valid_counts = jnp.broadcast_to(valid_counts, (batch_size, valid_counts.shape[1]))
+            else:
+                valid_counts = mask.reshape(-1, K).sum(axis=-1)
+
+        if batched:
+            splits_b = jnp.broadcast_to(splits, (batch_size,) + splits.shape)
+        else:
+            splits_b = splits
+
+        out = segment_csr_jax(rep, splits_b, reduction, valid_counts=valid_counts)
+        return out

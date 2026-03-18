@@ -68,6 +68,8 @@ class GINO(nn.Module):
         output_queries: jnp.ndarray,
         x: Optional[jnp.ndarray] = None,
         latent_features: Optional[jnp.ndarray] = None,
+        in_neighbors: Optional[Dict[str, jnp.ndarray]] = None,
+        out_neighbors: Optional[Dict[str, jnp.ndarray]] = None,
     ):
         """
         Forward pass of GINO.
@@ -77,12 +79,26 @@ class GINO(nn.Module):
         output_queries: (batch, n_out, coord_dim) or (n_out, coord_dim)
         x: (batch, n_in, in_channels) or (n_in, in_channels)
         latent_features: (batch, nx, ny, nz, latent_feature_channels)
+        in_neighbors: Optional dictionary of pre-calculated neighbors for input GNO
+        out_neighbors: Optional dictionary of pre-calculated neighbors for output GNO
         """
         batch_size = 1 if x is None else (1 if x.ndim == 2 else x.shape[0])
 
         # Ensure geometric inputs are consistently batch-free for GNO spatial querying
         if input_geom.ndim == 3: input_geom = jnp.squeeze(input_geom, 0)
         if output_queries.ndim == 3: output_queries = jnp.squeeze(output_queries, 0)
+
+        # Squeeze neighbors if they have an extra batch dimension (1, ...)
+        if in_neighbors is not None:
+            in_neighbors = jax.tree_util.tree_map(
+                lambda arr: jnp.squeeze(arr, 0) if (isinstance(arr, jnp.ndarray) and arr.ndim > 1 and arr.shape[0] == 1) else arr,
+                in_neighbors
+            )
+        if out_neighbors is not None:
+            out_neighbors = jax.tree_util.tree_map(
+                lambda arr: jnp.squeeze(arr, 0) if (isinstance(arr, jnp.ndarray) and arr.ndim > 1 and arr.shape[0] == 1) else arr,
+                out_neighbors
+            )
         
         # Determine out channels for input GNO
         in_gno_out = self.in_channels if self.in_gno_transform_type.startswith("nonlinear") else self.fno_hidden_channels
@@ -111,6 +127,7 @@ class GINO(nn.Module):
             y=input_geom,
             x=flat_latent_queries,
             f_y=x,
+            neighbors=in_neighbors
         )
 
         # Restore grid shape (batch, nx, ny, nz, channels)
@@ -173,7 +190,8 @@ class GINO(nn.Module):
         out_eval = gno_out(
             y=flat_latent_queries, 
             x=output_queries, 
-            f_y=x_latent if batch_size == 1 else x_latent[0] # Handle standalone vector representation
+            f_y=x_latent, # Pass full batch
+            neighbors=out_neighbors
         )
 
         # Re-apply batch dimension mapping
