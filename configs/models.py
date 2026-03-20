@@ -283,7 +283,7 @@ class GINO_Small3d(GINOConfig):
     """
     in_channels: int = 1
     out_channels: int = 1
-    fno_n_modes: tuple = (16, 16, 16)
+    fno_n_modes: tuple = (8, 8, 8)
     fno_hidden_channels: int = 64
     fno_n_layers: int = 4
     in_gno_radius: float = 0.05

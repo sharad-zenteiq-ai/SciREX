@@ -190,7 +190,8 @@ class CarCFDDataset:
 
     def _add_neighbors(self, sample: Dict, cache_idx: str) -> Dict:
         """Adds pre-calculated neighbors with caching."""
-        cache_id = f"{cache_idx}_v{self.max_vertices}_n{self.max_neighbors}_rin{self.in_gno_radius}_rout{self.out_gno_radius}"
+        res_str = "x".join(map(str, self.query_res))
+        cache_id = f"{cache_idx}_v{self.max_vertices}_res{res_str}_n{self.max_neighbors}_rin{self.in_gno_radius}_rout{self.out_gno_radius}"
         cache_path = self.neighbor_cache_dir / f"{cache_id}.npz"
 
         if cache_path.exists():
