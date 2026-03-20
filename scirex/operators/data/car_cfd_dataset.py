@@ -228,12 +228,12 @@ class CarCFDDataset:
         tree = scipy.spatial.KDTree(data)
         d, i = tree.query(queries, k=self.max_neighbors, distance_upper_bound=radius)
         mask = (i < len(data))
-        valid_indices = np.where(mask, i, 0).astype(np.int32)
+        valid_indices = np.where(mask, i, -1).astype(np.int32)
+        d_valid = np.where(mask, d, 0.0).astype(np.float32)
         return {
-            "neighbors_index": valid_indices,
-            "neighbors_mask": mask,
-            "neighbors_row_splits": np.arange(0, (queries.shape[0]+1)*self.max_neighbors, self.max_neighbors).astype(np.int32),
-            "neighbors_distance": d.astype(np.float32)
+            "neighbor_indices": valid_indices,
+            "mask": mask,
+            "distances": d_valid
         }
 
     # --------------------------------------------------

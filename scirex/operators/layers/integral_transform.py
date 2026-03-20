@@ -4,46 +4,7 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 from .channel_mlp import LinearChannelMLP
-
-
-def segment_csr_jax(data, splits, reduction="sum", valid_counts=None):
-    """
-    JAX equivalent of segment_csr for CSR neighborhoods.
-    
-    This version is optimized for JIT-safety in fixed-size neighborhoods.
-    """
-    num_segments = splits.shape[-1] - 1
-    
-    if data.ndim == 2:
-        # --- Unbatched Case ---
-        # Instead of using splits (which can be a tracer), we use the total edge count 
-        # and assume a fixed-size neighborhood for JIT shape stability.
-        num_edges = data.shape[0]
-        K = num_edges // num_segments
-        
-        # row_ids becomes [0,0,0, 1,1,1, ...] etc.
-        # Repeating with a static integer K is JIT-safe.
-        row_ids = jnp.repeat(jnp.arange(num_segments), K)
-        
-        # Perform segment sum
-        summed = jax.ops.segment_sum(data, row_ids, num_segments)
-        
-        if reduction == "sum":
-            return summed
-        
-        # For mean, divide by actual valid neighbors
-        if valid_counts is not None:
-            denominator = jnp.maximum(valid_counts, 1.0)[:, None]
-        else:
-            denominator = jnp.full((num_segments, 1), K)
-            
-        return summed / denominator
-
-    else:
-        # --- Batched Case ---
-        return jax.vmap(
-            lambda d, s, v: segment_csr_jax(d, s, reduction, v)
-        )(data, splits, valid_counts)
+from .segment_csr import segment_sum, segment_mean
 
 
 class IntegralTransform(nn.Module):
@@ -78,16 +39,14 @@ class IntegralTransform(nn.Module):
             x = y
 
         # --- Parse Neighbors ---
-        idx = neighbors["neighbors_index"]  # Expected (M, K)
-        splits = neighbors["neighbors_row_splits"] # (M+1,)
-        mask = neighbors.get("neighbors_mask") # (M, K)
+        idx = neighbors["neighbor_indices"]  # Expected (M, K)
+        mask = neighbors.get("mask") # (M, K)
 
         # Static neighborhood size for JIT-safety
-        K = idx.shape[-1] 
+        num_target_nodes, K = idx.shape[-2:]
 
         # Squeeze batch dimension from neighbors if present (static geometry assumption)
         if idx.ndim == 3: idx = idx[0]
-        if splits.ndim == 2: splits = splits[0]
         if mask is not None and mask.ndim == 3: mask = mask[0]
         
         # --- Handle Batching ---
@@ -101,8 +60,9 @@ class IntegralTransform(nn.Module):
             batch_size = x.shape[0]
 
         # --- Flatten Features to Edge-Wise (CSR) ---
-        # Using reshapes and static K ensures JIT compilation success
-        rep_features = y[idx].reshape(-1, y.shape[-1])
+        # Ensure padded index (-1) is safe for gather by replacing it temporarily with 0
+        safe_idx = jnp.where(idx == -1, 0, idx)
+        rep_features = y[safe_idx].reshape(-1, y.shape[-1])
         
         if x.ndim == 3:
             # Repeat each of the M points K times
@@ -112,9 +72,9 @@ class IntegralTransform(nn.Module):
 
         if f_y is not None:
             if f_y.ndim == 3:
-                in_features = f_y[:, idx, :].reshape(batch_size, -1, f_y.shape[-1])
+                in_features = f_y[:, safe_idx, :].reshape(batch_size, -1, f_y.shape[-1])
             else:
-                in_features = f_y[idx].reshape(-1, f_y.shape[-1])
+                in_features = f_y[safe_idx].reshape(-1, f_y.shape[-1])
         else:
             in_features = None
 
@@ -155,7 +115,7 @@ class IntegralTransform(nn.Module):
             rep = rep * mask_val
 
         # 4. Handle weights
-        nbr_weights = neighbors.get("neighbors_distance")
+        nbr_weights = neighbors.get("distances")
         if nbr_weights is None:
             nbr_weights = weights
 
@@ -163,6 +123,9 @@ class IntegralTransform(nn.Module):
             # Reshape weights to enable multiplication [..., num_edges, 1]
             if nbr_weights.ndim == 1:
                 nbr_weights = nbr_weights[:, None]
+            elif nbr_weights.ndim == 2:
+                nbr_weights = nbr_weights.reshape(-1, 1)
+                
             if batched and nbr_weights.ndim == 2:
                 nbr_weights = nbr_weights[None, :, :]
             elif batched and nbr_weights.ndim == 3 and nbr_weights.shape[0] != batch_size:
@@ -176,19 +139,27 @@ class IntegralTransform(nn.Module):
         else:
             reduction = self.reduction
 
-        # 5. Calculate valid_counts for Mean Reduction
-        valid_counts = None
-        if reduction == "mean" and mask is not None:
-            if batched:
-                valid_counts = mask.reshape(1, -1, K).sum(axis=-1)
-                valid_counts = jnp.broadcast_to(valid_counts, (batch_size, valid_counts.shape[1]))
-            else:
-                valid_counts = mask.reshape(-1, K).sum(axis=-1)
-
+        # 5. Segment Aggregate
+        segment_ids = jnp.repeat(jnp.arange(num_target_nodes), K)
+        mask_flat = mask.reshape(-1) if mask is not None else None
+        
         if batched:
-            splits_b = jnp.broadcast_to(splits, (batch_size,) + splits.shape)
+            if reduction == "mean":
+                out = jax.vmap(lambda r: segment_mean(r, segment_ids, num_target_nodes, mask_flat))(rep)
+            else:
+                out = jax.vmap(lambda r: segment_sum(r, segment_ids, num_target_nodes))(rep)
         else:
-            splits_b = splits
+            if reduction == "mean":
+                out = segment_mean(rep, segment_ids, num_target_nodes, mask_flat)
+            else:
+                out = segment_sum(rep, segment_ids, num_target_nodes)
 
-        out = segment_csr_jax(rep, splits_b, reduction, valid_counts=valid_counts)
+        # Optional: Print shapes at runtime internally as debugging utility using jax.debug.print
+        # In JAX, shapes are static, so formatting string statically works. 
+        # To strictly use `jax.debug.print` for shape validations:
+        # Uncomment below lines to enable runtime shape debugging
+        # jax.debug.print("neighbor_indices shape: {s}", s=jnp.array(idx.shape))
+        # jax.debug.print("weights shape: {s}", s=jnp.array(nbr_weights.shape if nbr_weights is not None else ()))
+        # jax.debug.print("outputs shape: {s}", s=jnp.array(out.shape))
+
         return out

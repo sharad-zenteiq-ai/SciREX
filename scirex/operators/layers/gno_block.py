@@ -164,11 +164,14 @@ class GNOBlock(nn.Module):
         ``[m, out_channels]``
         """
         if neighbors is None:
+            print(f"[{self.__class__.__name__}] Calculating neighbors dynamically using internal JAX NeighborSearch...")
             neighbors = self.neighbor_search(
-                data=y,
+                points=y,
                 queries=x,
                 radius=self.radius,
             )
+        else:
+            print(f"[{self.__class__.__name__}] Using exact precalculated neighbors provided by dataset!")
 
         if self.pos_embedding is not None:
             y_embed = self.pos_embedding(y)
