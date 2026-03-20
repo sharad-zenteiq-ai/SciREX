@@ -42,19 +42,19 @@ class GINOCarCFDConfig:
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     batch_size: int = 1
-    epochs: int = 20
+    epochs: int = 100
     seed: int = 42
 
     # ── LR Scheduler ──
     scheduler_type: Literal["step", "cosine"] = "cosine"
-    cosine_decay_epochs: int = 20
+    cosine_decay_epochs: int = 100
     scheduler_step_size: int = 10
     scheduler_gamma: float = 0.5
 
     # ── Data Parameters ──
     data_root: str = "./scirex/operators/data/car_cfd_data"
     query_res: list = field(default_factory=lambda: [32, 32, 32])
-    n_train: int = 500
+    n_train: int = 100
     n_test: int = 20
     download: bool = True
 
