@@ -1,15 +1,13 @@
 from typing import List, Union, Dict, Optional
 from pathlib import Path
 import json
+import jax
 import urllib.request
 import numpy as np
 import scipy.spatial
 import jax.numpy as jnp
 
 
-# --------------------------------------------------
-# 🔽 Download utility (no neuralop)
-# --------------------------------------------------
 def download_from_zenodo_record(record_id: str, root: Path):
     url = f"https://zenodo.org/api/records/{record_id}"
 
@@ -38,9 +36,6 @@ def download_from_zenodo_record(record_id: str, root: Path):
                 with tarfile.open(file_path, mode) as t:
                     t.extractall(root)
 
-# --------------------------------------------------
-# 🔽 JAX Dataset (NO MeshDataModule)
-# --------------------------------------------------
 class CarCFDDataset:
     def __init__(
         self,
@@ -157,14 +152,12 @@ class CarCFDDataset:
         press = item["press"]
         centroids = item.get("centroids")
 
-        # 🔥 EXACT same logic as torch version for pressure columns
         if press.ndim == 2 and press.shape[1] > 112:
             press = np.concatenate((press[:, 0:16], press[:, 112:]), axis=1)
 
         if press.ndim == 1:
             press = press[:, None]
 
-        # 🔴 CRITICAL: Fix size for JAX
         vertices = self._pad(vertices)
         press = self._pad(press)
         if centroids is not None:
@@ -278,8 +271,6 @@ class CarCFDDataset:
                 else:
                     batch[k] = np.stack([data[j][k] for j in batch_idx], axis=0)
 
-            # 🔥 convert everything recursively to JAX
-            import jax
             yield jax.tree_util.tree_map(lambda x: jnp.array(x) if isinstance(x, (np.ndarray, list)) else x, batch)
 def load_mini_car():
     """
