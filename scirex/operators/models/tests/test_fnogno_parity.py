@@ -103,7 +103,7 @@ def test_fnogno_parity():
     )
 
     # 4. Placeholder Assertions
-    # Note: Weight transfer is not implemented yet, so we cannot assert full numerical parity.
+    # Note: Weight transfer is not implemented yet so we cannot assert full numerical parity.
     # We will just verify shapes match.
     assert pt_out.shape == jax_out.shape, f"Shape mismatch: {pt_out.shape} vs {jax_out.shape}"
     assert not torch.isnan(pt_out).any(), "PyTorch output contains NaNs."

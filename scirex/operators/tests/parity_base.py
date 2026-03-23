@@ -1,5 +1,4 @@
 import os
-# Prevent JAX from pre-allocating all GPU memory, allowing PyTorch to use some.
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 

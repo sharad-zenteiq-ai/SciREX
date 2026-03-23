@@ -68,7 +68,7 @@ def test_fnogno_forward_pass():
         x=j_x
     )
 
-    # 4. Assertions
+    # 4. Assertion
     assert out is not None, "Model output should not be None."
     assert out.shape == (batch_size, n_out, out_channels), f"Expected shape {(batch_size, n_out, out_channels)}, got {out.shape}"
     assert not jnp.isnan(out).any(), "Model output contains NaNs."
