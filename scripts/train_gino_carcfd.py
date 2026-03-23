@@ -5,6 +5,10 @@ import sys
 os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + " --xla_gpu_deterministic_ops=true"
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
+# JAX Memory management
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+
 # Ensure project root is in path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
