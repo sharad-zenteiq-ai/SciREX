@@ -55,10 +55,7 @@ Usage
 from dataclasses import dataclass
 from typing import Optional, Literal
 
-
-# ────────────────────────────────────────────────────────────────────
 # Base config
-# ────────────────────────────────────────────────────────────────────
 @dataclass
 class ModelConfig:
     """Base configuration for any neural operator model."""
@@ -67,9 +64,7 @@ class ModelConfig:
     out_channels: int = 1
 
 
-# ────────────────────────────────────────────────────────────────────
-# Full FNO config  (exposes every tuneable architecture knob)
-# ────────────────────────────────────────────────────────────────────
+# Full FNO config 
 @dataclass
 class FNOConfig(ModelConfig):
     """
@@ -123,9 +118,7 @@ class FNOConfig(ModelConfig):
     use_norm: bool = False
 
 
-# ────────────────────────────────────────────────────────────────────
 # Simplified FNO config  (the knobs you tweak 90 % of the time)
-# ────────────────────────────────────────────────────────────────────
 @dataclass
 class SimpleFNOConfig(FNOConfig):
     """
@@ -140,10 +133,6 @@ class SimpleFNOConfig(FNOConfig):
     in_channels: int = 1
     out_channels: int = 1
 
-
-# ═══════════════════════════════════════════════════════════════════
-#  2-D   P R E S E T S
-# ═══════════════════════════════════════════════════════════════════
 
 @dataclass
 class FNO_Small2D(SimpleFNOConfig):
@@ -194,10 +183,6 @@ class FNO_Large2D(SimpleFNOConfig):
     use_norm: bool = True
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  3-D   P R E S E T S
-# ═══════════════════════════════════════════════════════════════════
-
 @dataclass
 class FNO_Small3D(SimpleFNOConfig):
     """
@@ -231,10 +216,7 @@ class FNO_Medium3D(SimpleFNOConfig):
     use_norm: bool = True
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  G I N O   P R E S E T S
-# ═══════════════════════════════════════════════════════════════════
-
+#  G I N O   
 @dataclass
 class GINOConfig(ModelConfig):
     """
@@ -288,3 +270,54 @@ class GINO_Small3d(GINOConfig):
     fno_n_layers: int = 4
     in_gno_radius: float = 0.05
     out_gno_radius: float = 0.05
+
+
+#  F N O G N O   
+
+@dataclass
+class FNOGNOConfig(ModelConfig):
+    """
+    Complete FNOGNO architecture configuration.
+    """
+    arch: str = "fnogno"
+
+    # FNOGNO core
+    projection_channel_ratio: int = 4
+    gno_coord_dim: int = 3
+    gno_radius: float = 0.033
+    gno_transform_type: str = "linear"
+
+    gno_pos_embed_type: str = "transformer"
+    gno_embed_channels: int = 32
+    gno_embed_max_positions: int = 10000
+
+    # FNO parameters
+    fno_n_modes: tuple = (16, 16, 16)
+    fno_hidden_channels: int = 64
+    fno_lifting_channel_ratio: int = 4
+    fno_n_layers: int = 4
+
+    # GNO MLP parameters
+    gno_channel_mlp_hidden_layers: tuple = (512, 256)
+
+    # FNO extras
+    fno_use_channel_mlp: bool = True
+    fno_norm: bool = False
+    fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
+    fno_channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
+
+    max_neighbors: int = 10
+    use_neighbor_cache: bool = True
+
+
+@dataclass
+class FNOGNO_Small3d(FNOGNOConfig):
+    """
+    A small FNOGNO for 3D Car-CFD problems.
+    """
+    in_channels: int = 1
+    out_channels: int = 1
+    fno_n_modes: tuple = (8, 8, 8)
+    fno_hidden_channels: int = 64
+    fno_n_layers: int = 4
+    gno_radius: float = 0.05

@@ -27,4 +27,6 @@ Model architectures for Neural Operators.
 """
 
 from .fno import FNO
+from .gino import GINO
+from .fnogno import FNOGNO
 # from .wno import WNO1D, WNO2D, FWNO2D
