@@ -4,11 +4,6 @@ import sys
 # Resolve ModuleNotFoundError when running as a script from the project root
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
-# Add external neuraloperator to path
-NEURALOP_PATH = "/home/mamta/work/neuraloperator"
-if NEURALOP_PATH not in sys.path:
-    sys.path.insert(0, NEURALOP_PATH)
-
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
