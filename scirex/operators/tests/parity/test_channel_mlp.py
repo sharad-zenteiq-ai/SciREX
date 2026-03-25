@@ -12,15 +12,20 @@ def test_channel_mlp_parity():
 
     # Input (PyTorch format)
     
-    x_torch = torch.randn(1, 16, 64)
-
+    x_torch = torch.randn(1, 16, 64) 
     
+    
+
     # Convert to JAX format
     
     x_jax = jnp.array(x_torch.numpy())
+    print("\n--- INPUT CHECK ---")
+    print("Torch input (first 5x5):\n", x_torch[0, :5, :5])
+    print("JAX input (first 5x5):\n", x_jax[0, :5, :5])
     x_jax = jnp.transpose(x_jax, (0, 2, 1))  # (B, S, C)
+    
 
-    # Step 3: Models
+    # Models
     
     torch_model = TorchChannelMLP(
         in_channels=16,
@@ -38,15 +43,15 @@ def test_channel_mlp_parity():
     )
 
 
-    # Step 4: Init JAX params
+    # Init JAX params
     
     key = jax.random.PRNGKey(0)
     params = jax_model.init(key, x_jax)
 
    
-    # Step 5: Copy weights
+    # Copy weights
  
-    for i in range(2):
+    for i, torch_layer in enumerate(torch_model.fcs):
         torch_layer = torch_model.fcs[i]
         jax_layer = f"dense_{i}"
 
@@ -62,7 +67,7 @@ def test_channel_mlp_parity():
         params["params"][jax_layer]["kernel"] = jnp.array(w)
         params["params"][jax_layer]["bias"] = jnp.array(b)
 
-    # Step 6: Forward pass
+    # Forward pass
 
     out_torch = torch_model(x_torch)
 
@@ -74,7 +79,7 @@ def test_channel_mlp_parity():
 
     out_torch = out_torch.detach().numpy()
 
-    # Step 7: Compare
+    # Compare
 
     print("Torch shape:", out_torch.shape)
     print("JAX shape:", out_jax.shape)
@@ -84,6 +89,10 @@ def test_channel_mlp_parity():
 
     max_diff = np.max(np.abs(out_torch - out_jax))
     print("Max diff:", max_diff)
+    
+    print("\n--- OUTPUT CHECK ---")
+    print("Torch output (first 5x5):\n", out_torch[0, :5, :5])
+    print("JAX output (first 5x5):\n", out_jax[0, :5, :5])
     
     assert np.allclose(out_torch, out_jax, atol=1e-3)
 
