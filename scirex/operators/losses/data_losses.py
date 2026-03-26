@@ -80,10 +80,11 @@ def h1_loss(pred: jnp.ndarray, target: jnp.ndarray, eps: float = 1e-8) -> jnp.nd
     ynorm_l2 = jnp.sum(target_flat ** 2, axis=-1)
 
     # Spatial derivatives via periodic central differences (x=dim1, y=dim2)
-    dx_pred = jnp.roll(pred, -1, axis=1) - jnp.roll(pred, 1, axis=1)
-    dx_target = jnp.roll(target, -1, axis=1) - jnp.roll(target, 1, axis=1)
-    dy_pred = jnp.roll(pred, -1, axis=2) - jnp.roll(pred, 1, axis=2)
-    dy_target = jnp.roll(target, -1, axis=2) - jnp.roll(target, 1, axis=2)
+    # Scaled by 0.5 to match standard (f_{i+1} - f_{i-1}) / 2 formula used in neuraloperator
+    dx_pred = 0.5 * (jnp.roll(pred, -1, axis=1) - jnp.roll(pred, 1, axis=1))
+    dx_target = 0.5 * (jnp.roll(target, -1, axis=1) - jnp.roll(target, 1, axis=1))
+    dy_pred = 0.5 * (jnp.roll(pred, -1, axis=2) - jnp.roll(pred, 1, axis=2))
+    dy_target = 0.5 * (jnp.roll(target, -1, axis=2) - jnp.roll(target, 1, axis=2))
 
     dx_diff_flat = (dx_pred - dx_target).reshape(pred.shape[0], -1)
     dx_target_flat = dx_target.reshape(pred.shape[0], -1)

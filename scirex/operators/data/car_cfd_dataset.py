@@ -164,13 +164,41 @@ class CarCFDDataset:
             centroids = self._pad(centroids)
 
         query_points = self._generate_grid()
-        distance = np.zeros((*self.query_res, 1), dtype=np.float32)
+        
+        # --- Distance / SDF Calculation ---
+        # 1. Use existing if present in item
+        if "distance" in item:
+            distance = item["distance"]
+        else:
+            # 2. Compute using trimesh if possible
+            try:
+                import trimesh
+                # Reconstruct mesh for SDF calculation
+                # We need faces to compute proximity properly
+                if "faces" in item:
+                    faces = item["faces"]
+                else:
+                    # If faces are missing, proximity calculation won't work well
+                    # fallback to zeros or nearest vertex distance
+                    faces = None
+                
+                if faces is not None:
+                    mesh = trimesh.Trimesh(vertices=item["vertices"], faces=faces)
+                    distance = self._compute_sdf(mesh, query_points)
+                else:
+                    # Fallback: Approximate Distance Function (distance to nearest vertex)
+                    tree = scipy.spatial.KDTree(item["vertices"])
+                    d, _ = tree.query(query_points)
+                    distance = d[..., None]
+            except (ImportError, Exception) as e:
+                print(f"Warning: SDF calculation failed for {idx}: {e}. Using zeros.")
+                distance = np.zeros((*self.query_res, 1), dtype=np.float32)
 
         sample = {
             "vertices": vertices.astype(np.float32),
             "press": press.astype(np.float32),
             "query_points": query_points,
-            "distance": distance,
+            "distance": distance.astype(np.float32),
         }
         if centroids is not None:
             sample["centroids"] = centroids.astype(np.float32)
@@ -191,6 +219,8 @@ class CarCFDDataset:
             with np.load(cache_path, allow_pickle=True) as cached:
                 sample["in_neighbors"] = {k.replace("in_", ""): cached[k] for k in cached.files if k.startswith("in_")}
                 sample["out_neighbors"] = {k.replace("out_", ""): cached[k] for k in cached.files if k.startswith("out_")}
+                if "distance" in cached:
+                    sample["distance"] = cached["distance"]
             return sample
 
         # 1. In (Mesh -> Grid)
@@ -212,6 +242,7 @@ class CarCFDDataset:
         # Save
         save_dict = {f"in_{k}": v for k, v in in_nb.items()}
         save_dict.update({f"out_{k}": v for k, v in out_nb.items()})
+        save_dict["distance"] = sample["distance"]
         np.savez(cache_path, **save_dict)
 
         sample["in_neighbors"] = in_nb
@@ -229,6 +260,31 @@ class CarCFDDataset:
             "mask": mask,
             "distances": d_valid
         }
+
+    def _compute_sdf(self, mesh, query_points):
+        """Computes Signed Distance Function using trimesh."""
+        # query_points shape: (nx, ny, nz, 3)
+        flat_queries = query_points.reshape(-1, 3)
+        
+        # trimesh signed_distance returns (n_queries,)
+        import trimesh
+        try:
+            # This requires the mesh to be watertight for a "true" signed distance
+            # For Car-CFD, we often use unsigned distance as a safe proxy if not watertight
+            if mesh.is_watertight:
+                sdf = trimesh.proximity.signed_distance(mesh, flat_queries)
+            else:
+                # Use unsigned distance if not watertight
+                sdf = trimesh.proximity.ProximityQuery(mesh).vertex(flat_queries)[0]
+                # Alternatively, use absolute distance to surface (slower but more accurate)
+                # _, sdf, _ = trimesh.proximity.closest_point(mesh, flat_queries)
+        except Exception as e:
+            print(f"SDF Error: {e}")
+            # Fallback to nearest-vertex distance
+            tree = scipy.spatial.KDTree(mesh.vertices)
+            sdf, _ = tree.query(flat_queries)
+            
+        return sdf.reshape((*self.query_res, 1)).astype(np.float32)
 
     # --------------------------------------------------
     def _pad(self, arr):

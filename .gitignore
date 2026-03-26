@@ -105,3 +105,7 @@ lib64
 
 *.mat
 *.npy
+# Car-CFD data and caches
+scirex/operators/data/car_cfd_data
+scirex/operators/data/change
+scirex/operators/data/neighbor_cache

@@ -58,14 +58,16 @@ class FNOBlock(nn.Module):
     skip_type: Literal["identity", "linear", "soft-gating"] = "linear"
     channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
     use_channel_mlp: bool = True
+    channel_mlp_expansion: float = 0.5
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jnp.ndarray, is_last: bool = False) -> jnp.ndarray:
         # Step 1: Global feature extraction via Spectral Convolution
         y_s = SpectralConv(
             in_channels=self.hidden_channels, 
             out_channels=self.hidden_channels, 
-            n_modes=self.n_modes
+            n_modes=self.n_modes,
+            bias=True
         )(x)
         
         # Step 2: Local feature extraction via Spatial Skip Connection
@@ -75,30 +77,32 @@ class FNOBlock(nn.Module):
         )(x)
         
         # Step 3: Branch fusion and stabilization
-        x = y_s + y_p
+        x_block = y_s + y_p
         
         if self.use_norm:
-            x = nn.InstanceNorm()(x)
+            x_block = nn.InstanceNorm()(x_block)
         
-        x = self.activation(x)
+        # Internal activation (always applied between branches)
+        # neuraloperator logic: apply activation BEFORE ChannelMLP 
+        # (but skip it on the very last block IF not using MLP? 
+        # Actually neuralop skips it on last block regardless of MLP)
+        if not is_last:
+            x_block = self.activation(x_block)
 
-        # Step 4: Point-wise refinement (Channel MLP)
-        # Often referred to as the 'modern' FNO variant or 'FNO-MLP'
         if self.use_channel_mlp:
-            y_mlp = ChannelMLP(
-                out_channels=self.hidden_channels,
-                hidden_channels=self.hidden_channels,
-                n_layers=2,
-                activation=self.activation
-            )(x)
-            
             y_skip = SkipConnection(
                 out_channels=self.hidden_channels,
                 skip_type=self.channel_mlp_skip
             )(x)
             
-            x = y_mlp + y_skip
-            x = self.activation(x)
-
-        return x
-
+            # Application of the MLP refinement
+            x_block = ChannelMLP(
+                out_channels=self.hidden_channels,
+                hidden_channels=int(self.hidden_channels * self.channel_mlp_expansion),
+                n_layers=2,
+                activation=self.activation
+            )(x_block)
+            
+            x_block = x_block + y_skip
+            
+        return x_block

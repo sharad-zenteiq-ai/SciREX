@@ -36,10 +36,14 @@ import sys
 os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + " --xla_gpu_deterministic_ops=true"
 os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
+# JAX Memory management: stop pre-allocating 90% of VRAM
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
+
 # Ensure project root is in path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
-    sys.path.append(project_root)
+    sys.path.insert(0, project_root)
 
 import jax
 import jax.numpy as jnp
@@ -59,47 +63,46 @@ from configs.poisson_fno_config import FNO3DConfig
 
 def make_schedule(config: FNO3DConfig):
     """Create learning rate schedule with Linear Warmup and Cosine Decay."""
-    # steps_per_epoch for 3D is explicitly from config
-    spe = config.steps_per_epoch
-    total_steps = config.epochs * spe
+    spe = config.get_steps_per_epoch()
+    total_steps = config.opt.n_epochs * spe
     
     # Warmup for ~5 epochs or 250 steps max
     warmup_steps = min(250, total_steps // 10)
     
-    if config.scheduler_type == "cosine":
+    if config.opt.scheduler == "cosine":
         # Consistently decay over the specified cosine_decay_epochs
-        cosine_decay_steps = config.cosine_decay_epochs * spe - warmup_steps
+        cosine_decay_steps = config.opt.cosine_decay_epochs * spe - warmup_steps
         cosine_decay_steps = max(cosine_decay_steps, 1)
         
         cosine_schedule = optax.cosine_decay_schedule(
-            init_value=config.learning_rate,
+            init_value=config.opt.learning_rate,
             decay_steps=cosine_decay_steps,
             alpha=0.0
         )
         schedule = optax.join_schedules(
             schedules=[
-                optax.linear_schedule(0.0, config.learning_rate, warmup_steps),
+                optax.linear_schedule(0.0, config.opt.learning_rate, warmup_steps),
                 cosine_schedule
             ],
             boundaries=[warmup_steps]
         )
-    elif config.scheduler_type == "step":
+    elif config.opt.scheduler == "step":
         scales = {}
-        decay_steps = config.scheduler_step_size * spe
-        num_decays = config.epochs // config.scheduler_step_size
+        decay_steps = config.opt.step_size * spe
+        num_decays = config.opt.n_epochs // config.opt.step_size
         
         current_scale = 1.0
         for i in range(1, num_decays + 1):
             boundary = i * decay_steps
-            current_scale *= config.scheduler_gamma
+            current_scale *= config.opt.gamma
             scales[boundary] = current_scale
             
         schedule = optax.piecewise_constant_schedule(
-            init_value=config.learning_rate,
+            init_value=config.opt.learning_rate,
             boundaries_and_scales=scales
         )
     else:
-        raise ValueError(f"Unknown scheduler_type: {config.scheduler_type}")
+        raise ValueError(f"Unknown scheduler: {config.opt.scheduler}")
     
     return schedule
 
@@ -121,51 +124,50 @@ class UnitGaussianNormalizer:
 def main():
     # 1. Load Configuration
     config = FNO3DConfig()
-    config.learning_rate = 1e-3 # Stabilize for LpLoss optimization
     
     # Prng Key
     rng = jax.random.PRNGKey(config.seed)
     rng, init_rng = jax.random.split(rng)
     
     # 2. Initialize Model
-    print(f"Initializing FNO (hidden_channels={config.hidden_channels}, modes={config.n_modes})...")
+    print(f"Initializing FNO (hidden_channels={config.model.hidden_channels}, modes={config.model.n_modes})...")
     model = FNO(
-        hidden_channels=config.hidden_channels, 
-        n_layers=config.n_layers, 
-        n_modes=config.n_modes, 
-        out_channels=config.out_channels,
-        lifting_channel_ratio=config.lifting_channel_ratio,
-        projection_channel_ratio=config.projection_channel_ratio,
+        hidden_channels=config.model.hidden_channels, 
+        n_layers=config.model.n_layers, 
+        n_modes=config.model.n_modes, 
+        out_channels=config.model.out_channels,
+        lifting_channel_ratio=config.model.lifting_channel_ratio,
+        projection_channel_ratio=config.model.projection_channel_ratio,
         use_grid=False, # Data already has grid (4 channels)
-        use_norm=config.use_norm,
-        fno_skip=config.fno_skip,
-        channel_mlp_skip=config.channel_mlp_skip,
-        use_channel_mlp=config.use_channel_mlp,
-        padding=config.domain_padding,
+        use_norm=config.model.use_norm,
+        fno_skip=config.model.fno_skip,
+        channel_mlp_skip=config.model.channel_mlp_skip,
+        use_channel_mlp=config.model.use_channel_mlp,
+        padding=config.model.domain_padding,
         activation=nn.gelu
     )
     
     # 3. Initialize Optimizer & Scheduler
     schedule = make_schedule(config)
-    steps_per_epoch = config.steps_per_epoch
-    total_steps = config.epochs * steps_per_epoch
+    steps_per_epoch = config.get_steps_per_epoch()
+    total_steps = config.opt.n_epochs * steps_per_epoch
     
     # Create Train State
     # Data has 4 channels (1 source + 3 spatial coordinates)
     in_channels = 4
-    nx, ny, nz = config.resolution
-    input_shape = (config.batch_size, nx, ny, nz, in_channels)
+    nx, ny, nz = config.data.resolution
+    input_shape = (config.data.batch_size, nx, ny, nz, in_channels)
     state = create_train_state(
         rng=init_rng, 
         model=model, 
         input_shape=input_shape, 
         learning_rate=schedule, 
-        weight_decay=config.weight_decay
+        weight_decay=config.opt.weight_decay
     )
     
     # 4. Pre-generate Fixed Datasets
-    n_train = config.n_train
-    n_test = config.n_test
+    n_train = config.data.n_train
+    n_test = config.data.n_test
     
     print(f"Generating {n_train} training samples and {n_test} test samples (3D)...")
     
@@ -198,12 +200,10 @@ def main():
     print(f"Data shapes: f_train={f_train.shape}, u_train={u_train.shape}")
     
     # Paths
-    ckpt_dir = os.path.join(project_root, "experiments/checkpoints")
-    os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_path = os.path.join(ckpt_dir, "poisson3d_fno_lploss_params.pkl")
+    os.makedirs(config.checkpoint_dir, exist_ok=True)
+    ckpt_path = os.path.join(config.checkpoint_dir, config.model_name)
 
-    results_dir = os.path.join(project_root, "experiments/results/poisson3d_lploss")
-    os.makedirs(results_dir, exist_ok=True)
+    os.makedirs(config.results_dir, exist_ok=True)
 
     best_rel_l2 = float("inf")
     history = {
@@ -223,12 +223,11 @@ def main():
         state = state.apply_gradients(grads=grads)
         return state, {"loss": loss}
 
-    print(f"Starting training for {config.epochs} epochs ({total_steps} steps)...")
+    print(f"Starting training for {config.opt.n_epochs} epochs ({total_steps} steps)...")
     rng_key = jax.random.PRNGKey(config.seed + 1)
     
-    
     _total_start_time = time.time()
-    for epoch in range(config.epochs):
+    for epoch in range(config.opt.n_epochs):
         epoch_start_time = time.time()
         epoch_loss = 0.0
         
@@ -239,8 +238,8 @@ def main():
         u_shuffled = u_train_encoded[perm]
         
         for step in range(steps_per_epoch):
-            start_idx = step * config.batch_size
-            end_idx = start_idx + config.batch_size
+            start_idx = step * config.data.batch_size
+            end_idx = start_idx + config.data.batch_size
             
             batch = {
                 "x": f_shuffled[start_idx:end_idx],
@@ -270,7 +269,7 @@ def main():
         
         current_lr = schedule(state.step)
         
-        if epoch % 10 == 0 or epoch == config.epochs - 1:
+        if epoch % 10 == 0 or epoch == config.opt.n_epochs - 1:
             print(f"Epoch {epoch:4d} | "
                   f"Train Rel L2: {avg_train_loss:.6e} | "
                   f"Test Rel L2: {v_test_l2:.6f} | "
@@ -278,7 +277,7 @@ def main():
                   f"LR: {float(current_lr):.2e} | "
                   f"Time: {epoch_time:.2f}s")
             
-            with open(os.path.join(results_dir, "fno3d_metrics.json"), "w") as f:
+            with open(os.path.join(config.results_dir, "fno3d_metrics.json"), "w") as f:
                 json.dump(history, f, indent=4)
 
     _total_end_time = time.time()
@@ -301,8 +300,8 @@ def main():
     plt.legend()
     
     plt.tight_layout()
-    plt.savefig(os.path.join(results_dir, "poisson3d_fno_losses.png"), dpi=150)
-    print(f"Loss curves saved to: {os.path.join(results_dir, 'poisson3d_fno_losses.png')}")
+    plt.savefig(os.path.join(config.results_dir, "poisson3d_fno_losses.png"), dpi=150)
+    print(f"Loss curves saved to: {os.path.join(config.results_dir, 'poisson3d_fno_losses.png')}")
 
 if __name__ == "__main__":
     main()

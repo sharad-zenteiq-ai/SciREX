@@ -3,31 +3,31 @@
 # All rights reserved.
 #
 # This file is part of SciREX
-# (Scientific Research and Engineering eXcellence Platform).
+# (Scientific Research and Engineering eXcellence Platform),
+# developed jointly by Zenteiq Aitech Innovations and AiREX Lab
+# under the guidance of Prof. Sashikumaar Ganesan.
 #
-# Licensed under the Apache License, Version 2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# For any clarifications or special considerations,
+# please contact: contact@scirex.org
 
 """
 SciREX configuration presets.
-
-Model architecture presets  (configs.models)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-- :class:`FNOConfig`        – full FNO parameter surface
-- :class:`SimpleFNOConfig`  – simplified subset
-- :class:`FNO_Small2D`      – small 2D FNO
-- :class:`FNO_Medium2D`     – medium 2D FNO (default)
-- :class:`FNO_Large2D`      – large 2D FNO
-- :class:`FNO_Small3D`      – small 3D FNO
-- :class:`FNO_Medium3D`     – medium 3D FNO (default)
-
-Experiment configs  (model + training + data)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-- :class:`FNO2DConfig`      – 2D Poisson experiment
-- :class:`FNO3DConfig`      – 3D Poisson experiment
 """
 
 # ── Model architecture presets ──
-from configs.models import (  # noqa: F401
+from configs.models import (
     ModelConfig,
     FNOConfig,
     SimpleFNOConfig,
@@ -38,19 +38,11 @@ from configs.models import (  # noqa: F401
     FNO_Medium3D,
     GINOConfig,
     GINO_Small3d,
+    FNOGNOConfig,
+    FNOGNO_Small3d,
 )
 
 # ── Experiment configs ──
-from configs.poisson_fno_config import FNO2DConfig, FNO3DConfig  # noqa: F401
-
-try:
-    from configs.ns_fno3d_config import (  # noqa: F401
-        NSFNO3DConfig,
-        NSFNO3D_Small,
-        NSFNO3D_Medium,
-        NSFNO3D_Large,
-        NSFNO3D_Huge,
-    )
-except ModuleNotFoundError:
-    pass
-
+from configs.poisson_fno_config import FNO2DConfig, FNO3DConfig
+from configs.gino_carcfd_config import GINOCarCFDConfig
+from configs.fnogno_carcfd_config import FNOGNOCarCFDConfig

@@ -1,82 +1,76 @@
-from dataclasses import dataclass, field
-from typing import Optional, Literal, List
-from configs.models import FNOGNO_Small3d
+# Copyright (c) 2024 Zenteiq Aitech Innovations Private Limited and
+# AiREX Lab, Indian Institute of Science, Bangalore.
+# All rights reserved.
+#
+# This file is part of SciREX
+# (Scientific Research and Engineering eXcellence Platform),
+# developed jointly by Zenteiq Aitech Innovations and AiREX Lab
+# under the guidance of Prof. Sashikumaar Ganesan.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# For any clarifications or special considerations,
+# please contact: contact@scirex.org
 
+"""
+Experiment configuration for FNOGNO on Car-CFD dataset.
+"""
 
-@dataclass
-class FNOGNOCarCFDConfig:
-    """Full experiment config for Car-CFD + FNOGNO."""
+from typing import List, Optional, Literal, Any
+from zencfg import ConfigBase
+from configs.models import FNOGNOConfig, FNOGNO_Small3d
 
-    # ── Model Architecture (preset) ──
-    model: FNOGNO_Small3d = field(default_factory=FNOGNO_Small3d)
-
-    # ── Training Parameters ──
+class FNOGNOCarCFDOptConfig(ConfigBase):
+    n_epochs: int = 100
     learning_rate: float = 1e-3
+    training_loss: str = "l2"
     weight_decay: float = 1e-4
-    batch_size: int = 1
-    epochs: int = 100
-    seed: int = 42
-
-    # ── LR Scheduler ──
-    scheduler_type: Literal["step", "cosine"] = "cosine"
+    scheduler: str = "cosine" # Literal["step", "cosine"]
+    step_size: int = 10
+    gamma: float = 0.5
     cosine_decay_epochs: int = 100
-    scheduler_step_size: int = 10
-    scheduler_gamma: float = 0.5
 
-    # ── Data Parameters ──
+
+class FNOGNOCarCFDDatasetConfig(ConfigBase):
     data_root: str = "./scirex/operators/data/car_cfd_data"
-    query_res: list = field(default_factory=lambda: [32, 32, 32])
+    batch_size: int = 1
     n_train: int = 100
     n_test: int = 20
+    query_res: List[int] = [32, 32, 32]
     download: bool = True
-
-    # ── Neighbor Search Cache ──
     neighbor_cache_dir: str = "./scirex/operators/data/neighbor_cache"
+
+
+class Default(ConfigBase):
+    """Full experiment config for Car-CFD + FNOGNO."""
+    
+    verbose: bool = True
+    model: FNOGNOConfig = FNOGNO_Small3d()
+    opt: FNOGNOCarCFDOptConfig = FNOGNOCarCFDOptConfig()
+    data: FNOGNOCarCFDDatasetConfig = FNOGNOCarCFDDatasetConfig()
+
+    # ── Paths ──
+    checkpoint_dir: str = "experiments/checkpoints"
+    results_dir: str = "experiments/results/car_cfd_fnogno"
+    model_name: str = "car_cfd_fnogno_jax.pkl"
+    seed: int = 42
 
     # ── Logging ──
     wandb_log: bool = False
 
-    # ── Convenience properties ──
-    @property
-    def fno_n_modes(self):
-        return self.model.fno_n_modes
+    def get_steps_per_epoch(self) -> int:
+        return max(self.data.n_train // self.data.batch_size, 1)
 
-    @property
-    def fno_hidden_channels(self):
-        return self.model.fno_hidden_channels
 
-    @property
-    def fno_n_layers(self):
-        return self.model.fno_n_layers
-
-    @property
-    def fno_lifting_channel_ratio(self):
-        return self.model.fno_lifting_channel_ratio
-
-    @property
-    def gno_radius(self):
-        return self.model.gno_radius
-
-    @property
-    def in_channels(self):
-        return self.model.in_channels
-
-    @property
-    def out_channels(self):
-        return self.model.out_channels
-
-    @property
-    def gno_coord_dim(self):
-        return self.model.gno_coord_dim
-
-    @property
-    def gno_transform_type(self):
-        return self.model.gno_transform_type
-
-    @property
-    def max_neighbors(self):
-        return self.model.max_neighbors
-
-    @property
-    def use_neighbor_cache(self):
-        return self.model.use_neighbor_cache
+# Alias for backward compatibility
+FNOGNOCarCFDConfig = Default

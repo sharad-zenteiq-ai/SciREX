@@ -24,40 +24,14 @@
 
 """
 Model architecture configuration presets for SciREX neural operators.
-
 Pure architecture configs — no training or data parameters.
-Inspired by neuraloperator (https://github.com/neuraloperator/neuraloperator).
-
-Hierarchy
----------
-ModelConfig                   -- abstract base for any neural operator
-  └── FNOConfig               -- full FNO parameter surface
-        └── SimpleFNOConfig   -- simplified subset (most common knobs)
-              ├── FNO_Small2D
-              ├── FNO_Medium2D
-              ├── FNO_Large2D
-              ├── FNO_Small3D
-              └── FNO_Medium3D
-
-Usage
------
-    from configs.models import FNO_Small2D
-
-    cfg = FNO_Small2D()
-    model = FNO(
-        hidden_channels=cfg.hidden_channels,
-        n_layers=cfg.n_layers,
-        n_modes=cfg.n_modes,
-        out_channels=cfg.out_channels,
-    )
 """
 
-from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple, Any
+from zencfg import ConfigBase
 
 # Base config
-@dataclass
-class ModelConfig:
+class ModelConfig(ConfigBase):
     """Base configuration for any neural operator model."""
     arch: str = "fno"
     in_channels: int = 1
@@ -65,45 +39,12 @@ class ModelConfig:
 
 
 # Full FNO config 
-@dataclass
 class FNOConfig(ModelConfig):
     """
     Complete FNO architecture configuration.
-
-    Parameters
-    ----------
-    n_modes : tuple of int
-        Fourier modes to keep per spatial dimension.
-        Length determines 2D vs 3D.
-    hidden_channels : int
-        Width of the spectral layers.
-    n_layers : int
-        Number of FNO blocks.
-    in_channels : int
-        Input channels (e.g. 1 for a scalar field).
-    out_channels : int
-        Output channels.
-    lifting_channel_ratio : int
-        Ratio of lifting channels to hidden_channels.
-    projection_channel_ratio : int
-        Ratio of projection channels to hidden_channels.
-    use_grid : bool
-        Whether to automatically append normalized spatial coordinates.
-    fno_skip : str
-        Type of skip connection for the spectral branch.
-    channel_mlp_skip : str
-        Type of skip connection for the channel MLP branch.
-    use_channel_mlp : bool
-        Whether to use a channel MLP refinement in each block.
-    domain_padding : float
-        Fraction of zero-padding applied via ``DomainPadding``.
-        Used by the unified ``FNO`` model.
-    use_norm : bool
-        Whether to apply instance normalization inside each
-        ``FNOBlock``.
     """
     arch: str = "fno"
-    n_modes: tuple = (16, 16)
+    n_modes: Tuple[int, ...] = (16, 16)
     hidden_channels: int = 64
     n_layers: int = 4
     in_channels: int = 1
@@ -118,30 +59,16 @@ class FNOConfig(ModelConfig):
     use_norm: bool = False
 
 
-# Simplified FNO config  (the knobs you tweak 90 % of the time)
-@dataclass
+# Simplified FNO config
 class SimpleFNOConfig(FNOConfig):
     """
-    SimpleFNOConfig: exposes only the most commonly tuned FNO
-    parameters while inheriting sensible defaults for the rest.
-
-    This is the recommended base class for defining quick presets.
+    Exposes only the most commonly tuned FNO parameters.
     """
-    n_modes: tuple = (16, 16)
-    hidden_channels: int = 64
-    n_layers: int = 4
-    in_channels: int = 1
-    out_channels: int = 1
+    pass
 
 
-@dataclass
 class FNO_Small2D(SimpleFNOConfig):
-    """
-    A small FNO for 2D problems.
-
-    Good for quick prototyping and sanity checks.  ~30 k params.
-    """
-    n_modes: tuple = (16, 16)
+    n_modes: Tuple[int, ...] = (16, 16)
     hidden_channels: int = 24
     n_layers: int = 4
     in_channels: int = 3
@@ -149,15 +76,8 @@ class FNO_Small2D(SimpleFNOConfig):
     use_grid: bool = False
 
 
-@dataclass
 class FNO_Medium2D(SimpleFNOConfig):
-    """
-    A medium-sized FNO for 2D problems.
-
-    The default workhorse for most 2D operator-learning tasks such
-    as Poisson, Darcy, etc.
-    """
-    n_modes: tuple = (24, 24)
+    n_modes: Tuple[int, ...] = (24, 24)
     hidden_channels: int = 128
     n_layers: int = 4
     in_channels: int = 3
@@ -166,15 +86,8 @@ class FNO_Medium2D(SimpleFNOConfig):
     use_norm: bool = True
 
 
-@dataclass
 class FNO_Large2D(SimpleFNOConfig):
-    """
-    A large FNO for 2D problems.
-
-    More Fourier modes and wider hidden channels for higher-resolution
-    or harder 2D problems.
-    """
-    n_modes: tuple = (32, 32)
+    n_modes: Tuple[int, ...] = (32, 32)
     hidden_channels: int = 256
     n_layers: int = 4
     in_channels: int = 3
@@ -183,14 +96,8 @@ class FNO_Large2D(SimpleFNOConfig):
     use_norm: bool = True
 
 
-@dataclass
 class FNO_Small3D(SimpleFNOConfig):
-    """
-    A small FNO for 3D problems.
-
-    Suitable for low-resolution 3D experiments on a single GPU.
-    """
-    n_modes: tuple = (8, 8, 8)
+    n_modes: Tuple[int, ...] = (8, 8, 8)
     hidden_channels: int = 24
     n_layers: int = 4
     in_channels: int = 4
@@ -199,15 +106,8 @@ class FNO_Small3D(SimpleFNOConfig):
     use_norm: bool = True
 
 
-@dataclass
 class FNO_Medium3D(SimpleFNOConfig):
-    """
-    A medium FNO for 3D problems.
-
-    Default for 3D operator tasks such as 3D Poisson.
-    Includes instance norm and a positional embedding for stability.
-    """
-    n_modes: tuple = (16, 16, 16)
+    n_modes: Tuple[int, ...] = (16, 16, 16)
     hidden_channels: int = 128
     n_layers: int = 4
     in_channels: int = 4
@@ -217,7 +117,6 @@ class FNO_Medium3D(SimpleFNOConfig):
 
 
 #  G I N O   
-@dataclass
 class GINOConfig(ModelConfig):
     """
     Complete GINO architecture configuration.
@@ -239,14 +138,14 @@ class GINOConfig(ModelConfig):
     gno_embed_max_positions: int = 10000
 
     # FNO parameters
-    fno_n_modes: tuple = (16, 16, 16)
+    fno_n_modes: Tuple[int, ...] = (16, 16, 16)
     fno_hidden_channels: int = 64
     fno_lifting_channel_ratio: int = 2
     fno_n_layers: int = 4
 
     # GNO MLP parameters
-    in_gno_channel_mlp_hidden_layers: tuple = (80, 80, 80)
-    out_gno_channel_mlp_hidden_layers: tuple = (512, 256)
+    in_gno_channel_mlp_hidden_layers: Tuple[int, ...] = (80, 80, 80)
+    out_gno_channel_mlp_hidden_layers: Tuple[int, ...] = (512, 256)
 
     # FNO extras
     fno_use_channel_mlp: bool = True
@@ -258,14 +157,10 @@ class GINOConfig(ModelConfig):
     use_neighbor_cache: bool = True
 
 
-@dataclass
 class GINO_Small3d(GINOConfig):
-    """
-    A small GINO for 3D Car-CFD problems.
-    """
     in_channels: int = 1
     out_channels: int = 1
-    fno_n_modes: tuple = (8, 8, 8)
+    fno_n_modes: Tuple[int, ...] = (8, 8, 8)
     fno_hidden_channels: int = 64
     fno_n_layers: int = 4
     in_gno_radius: float = 0.05
@@ -273,8 +168,6 @@ class GINO_Small3d(GINOConfig):
 
 
 #  F N O G N O   
-
-@dataclass
 class FNOGNOConfig(ModelConfig):
     """
     Complete FNOGNO architecture configuration.
@@ -292,13 +185,13 @@ class FNOGNOConfig(ModelConfig):
     gno_embed_max_positions: int = 10000
 
     # FNO parameters
-    fno_n_modes: tuple = (16, 16, 16)
+    fno_n_modes: Tuple[int, ...] = (16, 16, 16)
     fno_hidden_channels: int = 64
     fno_lifting_channel_ratio: int = 4
     fno_n_layers: int = 4
 
     # GNO MLP parameters
-    gno_channel_mlp_hidden_layers: tuple = (512, 256)
+    gno_channel_mlp_hidden_layers: Tuple[int, ...] = (512, 256)
 
     # FNO extras
     fno_use_channel_mlp: bool = True
@@ -310,14 +203,10 @@ class FNOGNOConfig(ModelConfig):
     use_neighbor_cache: bool = True
 
 
-@dataclass
 class FNOGNO_Small3d(FNOGNOConfig):
-    """
-    A small FNOGNO for 3D Car-CFD problems.
-    """
     in_channels: int = 1
     out_channels: int = 1
-    fno_n_modes: tuple = (8, 8, 8)
+    fno_n_modes: Tuple[int, ...] = (8, 8, 8)
     fno_hidden_channels: int = 64
     fno_n_layers: int = 4
     gno_radius: float = 0.05

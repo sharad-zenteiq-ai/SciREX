@@ -35,12 +35,12 @@ from flax import linen as fnn
 # Ensure project root is in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
-from scirex.operators.models.fnogno import FNOGNO as JaxFNOGNO
-from neuralop.models import FNOGNO as PtFNOGNO
+from scirex.operators.models.gino import GINO as JaxGINO
+from neuralop.models import GINO as PtGINO
 from scirex.operators.layers.neighbor_search import NeighborSearch as JAX_NeighborSearch
 
 # ==============================================================================
-# WEIGHT MAPPING UTILITIES
+# WEIGHT MAPPING UTILITIES (REUSED FROM FNOGNO)
 # ==============================================================================
 
 def map_channel_mlp(jax_params, pt_module):
@@ -49,7 +49,6 @@ def map_channel_mlp(jax_params, pt_module):
     for i in range(len(pt_module.fcs)):
         jax_dense = jax_params[f'dense_{i}']
         # neuralop.layers.channel_mlp.ChannelMLP uses Conv1d with kernel_size=1
-        # Weight shape: (out_channels, in_channels, 1)
         w = torch.from_numpy(np.array(jax_dense['kernel'].T)).to(torch.float64)
         if w.ndim == 2:
             w = w.unsqueeze(-1)
@@ -61,17 +60,11 @@ def map_fno_blocks(jax_params, pt_module):
     """Maps JAX FNOBlocks parameters to PyTorch FNOBlocks module."""
     new_state_dict = {}
     for i in range(pt_module.n_layers):
-        # Neuraloperator FNOBlock structure: convs[i], fno_skips[i], mlp[i], mlp_skips[i]
         jax_block = jax_params[f'FNOBlock_{i}']
         
         # 1. Spectral Conv
         jax_conv = jax_block['conv']
-        # fno_blocks.convs.0.weight: (hidden, hidden, m0, m1) - wait! 
-        # For 3D: (hidden, hidden, m0, m1, m2)
-        # neuralop uses list for modes
         n_modes = pt_module.convs[i].n_modes
-        
-        # Complex weights in JAX: 'weight_0', 'weight_1', ...
         for m_idx in range(len(n_modes)):
             w_real = np.array(jax_conv[f'weight_{m_idx}']['real'])
             w_imag = np.array(jax_conv[f'weight_{m_idx}']['imag'])
@@ -93,7 +86,6 @@ def map_fno_blocks(jax_params, pt_module):
                 new_state_dict[f'mlp.{i}.fcs.{l_idx}.weight'] = torch.from_numpy(np.array(jax_dense['kernel'].T)).to(torch.float64)
                 new_state_dict[f'mlp.{i}.fcs.{l_idx}.bias'] = torch.from_numpy(np.array(jax_dense['bias'])).to(torch.float64)
                 
-            # 4. MLP Skip
             jax_mlp_skip = jax_block['channel_mlp_skip']
             new_state_dict[f'mlp_skips.{i}.weight'] = torch.from_numpy(np.array(jax_mlp_skip['kernel'].T)).to(torch.float64)
             if 'bias' in jax_mlp_skip:
@@ -104,31 +96,32 @@ def map_fno_blocks(jax_params, pt_module):
 def map_gno_block(jax_params, pt_module):
     """Maps JAX GNOBlock parameters to PyTorch GNOBlock module."""
     new_state_dict = {}
-    
-    # MLP weights
     jax_it_params = jax_params['integral_transform']
     jax_mlp_params = jax_it_params['channel_mlp']
     
     for l_idx in range(len(pt_module.integral_transform.channel_mlp.fcs)):
         jax_dense = jax_mlp_params[f'dense_{l_idx}']
-        # LinearChannelMLP uses nn.Linear, so no unsqueeze needed here
+        # LinearChannelMLP uses nn.Linear
         new_state_dict[f'integral_transform.channel_mlp.fcs.{l_idx}.weight'] = torch.from_numpy(np.array(jax_dense['kernel'].T)).to(torch.float64)
         new_state_dict[f'integral_transform.channel_mlp.fcs.{l_idx}.bias'] = torch.from_numpy(np.array(jax_dense['bias'])).to(torch.float64)
         
     pt_module.load_state_dict(new_state_dict, strict=False)
 
-def map_jax_to_pt_fnogno(jax_params, pt_model):
-    """Full mapping for FNOGNO model mapping to JAX default naming."""
+def map_jax_to_pt_gino(jax_params, pt_model):
+    """Full mapping for GINO model mapping to JAX default naming."""
+    # GNOBlock_0 is gno_in
+    map_gno_block(jax_params['GNOBlock_0'], pt_model.gno_in)
+    
     # ChannelMLP_0 is lifting
     map_channel_mlp(jax_params['ChannelMLP_0'], pt_model.lifting)
-    
+
     # FNO blocks are direct children FNOBlock_0, FNOBlock_1
     new_state_dict = {}
     for i in range(pt_model.fno_blocks.n_layers):
         jax_block = jax_params[f'FNOBlock_{i}']
         
         # 1. Spectral Conv
-        jax_conv = jax_block['conv']
+        jax_conv = jax_block['SpectralConv_0']
         n_modes = pt_model.fno_blocks.convs[i].n_modes
         for m_idx in range(len(n_modes)):
             w_real = np.array(jax_conv[f'weight_{m_idx}']['real'])
@@ -137,121 +130,153 @@ def map_jax_to_pt_fnogno(jax_params, pt_model):
             new_state_dict[f'fno_blocks.convs.{i}.weight_{m_idx}'] = w_torch
             
         # 2. FNO Skip
-        jax_skip = jax_block['skip']
+        jax_skip = jax_block['SkipConnection_0']
         new_state_dict[f'fno_blocks.fno_skips.{i}.weight'] = torch.from_numpy(np.array(jax_skip['kernel'].T)).to(torch.float64)
         if 'bias' in jax_skip:
             new_state_dict[f'fno_blocks.fno_skips.{i}.bias'] = torch.from_numpy(np.array(jax_skip['bias'])).to(torch.float64)
             
         # 3. Channel MLP
-        if hasattr(pt_model.fno_blocks, 'mlp') and pt_model.fno_blocks.mlp:
-            jax_mlp = jax_block['channel_mlp']
-            for l_idx in range(len(pt_model.fno_blocks.mlp[i].fcs)):
-                jax_dense = jax_mlp[f'fcs_{l_idx}']
-                new_state_dict[f'fno_blocks.mlp.{i}.fcs.{l_idx}.weight'] = torch.from_numpy(np.array(jax_dense['kernel'].T)).to(torch.float64)
-                new_state_dict[f'fno_blocks.mlp.{i}.fcs.{l_idx}.bias'] = torch.from_numpy(np.array(jax_dense['bias'])).to(torch.float64)
+        if hasattr(pt_model.fno_blocks, 'channel_mlp') and pt_model.fno_blocks.channel_mlp:
+            jax_mlp = jax_block['ChannelMLP_0']
+            # pt_model.fno_blocks.channel_mlp is a ModuleList of ChannelMLP
+            pt_mlp_module = pt_model.fno_blocks.channel_mlp[i]
+            for l_idx in range(len(pt_mlp_module.fcs)):
+                jax_dense = jax_mlp[f'dense_{l_idx}']
+                # ChannelMLP inside FNOBlock in neuralop uses Conv1d too
+                w = torch.from_numpy(np.array(jax_dense['kernel'].T)).to(torch.float64)
+                if w.ndim == 2:
+                    w = w.unsqueeze(-1)
+                new_state_dict[f'fno_blocks.channel_mlp.{i}.fcs.{l_idx}.weight'] = w
+                new_state_dict[f'fno_blocks.channel_mlp.{i}.fcs.{l_idx}.bias'] = torch.from_numpy(np.array(jax_dense['bias'])).to(torch.float64)
                 
-            jax_mlp_skip = jax_block['channel_mlp_skip']
-            new_state_dict[f'fno_blocks.mlp_skips.{i}.weight'] = torch.from_numpy(np.array(jax_mlp_skip['kernel'].T)).to(torch.float64)
+            jax_mlp_skip = jax_block['SkipConnection_1']
+            new_state_dict[f'fno_blocks.channel_mlp_skips.{i}.weight'] = torch.from_numpy(np.array(jax_mlp_skip['kernel'].T)).to(torch.float64)
             if 'bias' in jax_mlp_skip:
-                new_state_dict[f'fno_blocks.mlp_skips.{i}.bias'] = torch.from_numpy(np.array(jax_mlp_skip['bias'])).to(torch.float64)
+                new_state_dict[f'fno_blocks.channel_mlp_skips.{i}.bias'] = torch.from_numpy(np.array(jax_mlp_skip['bias'])).to(torch.float64)
 
     pt_model.load_state_dict(new_state_dict, strict=False)
     
-    # GNOBlock_0 is the output GNO
-    map_gno_block(jax_params['GNOBlock_0'], pt_model.gno)
+    # GNOBlock_1 is gno_out
+    map_gno_block(jax_params['GNOBlock_1'], pt_model.gno_out)
     
-    # ChannelMLP_1 is the projection
+    # ChannelMLP_1 is projection
     map_channel_mlp(jax_params['ChannelMLP_1'], pt_model.projection)
 
 # ==============================================================================
 # TEST CASE
 # ==============================================================================
 
-def test_fnogno_parity():
+def test_gino_parity():
     # Use float64 for parity
     jax.config.update("jax_enable_x64", True)
     torch.set_default_dtype(torch.float64)
     
-    seed = 123
+    seed = 42
     batch_size = 1
     nx, ny, nz = 8, 8, 8
-    in_channels = 2
+    n_in = 32
+    n_out = 16
+    in_channels = 3
     out_channels = 1
     coord_dim = 3
-    n_out = 10
     
     # ── 1. Create Inputs ──
     rng = jax.random.PRNGKey(seed)
-    rng_f, rng_out, rng_init = jax.random.split(rng, 3)
+    rng_f, rng_in_geom, rng_out_queries, rng_init = jax.random.split(rng, 4)
     
-    # Latent Grid
+    # Grid
     x_grid = jnp.linspace(0, 1, nx, dtype=jnp.float64)
     y_grid = jnp.linspace(0, 1, ny, dtype=jnp.float64)
     z_grid = jnp.linspace(0, 1, nz, dtype=jnp.float64)
     grid = jnp.stack(jnp.meshgrid(x_grid, y_grid, z_grid, indexing='ij'), axis=-1)
-    in_p_jax = jnp.repeat(grid[None, ...], batch_size, axis=0) # (b, 8, 8, 8, 3)
+    latent_queries_jax = jnp.repeat(grid[None, ...], batch_size, axis=0) # (b, 8, 8, 8, 3)
     
-    f_jax = jax.random.normal(rng_f, (batch_size, nx, ny, nz, in_channels), dtype=jnp.float64)
-    out_p_jax = jax.random.uniform(rng_out, (batch_size, n_out, coord_dim), dtype=jnp.float64)
+    input_geom_jax = jax.random.normal(rng_in_geom, (n_in, coord_dim), dtype=jnp.float64)
+    x_in_jax = jax.random.normal(rng_f, (batch_size, n_in, in_channels), dtype=jnp.float64)
+    output_queries_jax = jax.random.uniform(rng_out_queries, (n_out, coord_dim), dtype=jnp.float64)
     
     # ── 2. JAX Model ──
-    jax_model = JaxFNOGNO(
+    jax_model = JaxGINO(
         in_channels=in_channels,
         out_channels=out_channels,
+        gno_coord_dim=coord_dim,
+        in_gno_radius=0.5,
+        out_gno_radius=0.5,
         fno_n_modes=(4, 4, 4),
         fno_hidden_channels=16,
         fno_n_layers=2,
-        gno_coord_dim=coord_dim,
-        gno_radius=0.5,
-        gno_channel_mlp_hidden_layers=(32, 16),
+        in_gno_channel_mlp_hidden_layers=(16, 16),
+        out_gno_channel_mlp_hidden_layers=(16, 16),
         max_neighbors=20
     )
     
-    variables = jax_model.init(rng_init, in_p=in_p_jax, out_p=out_p_jax, f=f_jax)
-    print("\nJAX Params Keys:", variables['params'].keys())
+    # Initialized weights
+    variables = jax_model.init(
+        rng_init, 
+        input_geom=input_geom_jax, 
+        latent_queries=latent_queries_jax,
+        output_queries=output_queries_jax,
+        x=x_in_jax
+    )
+    print("\nJAX GINO Params Keys:", variables['params'].keys())
     
-    # Neighbors (using JAX search for parity in geometry)
+    # Neighbors search
     ns = JAX_NeighborSearch(max_neighbors=20)
-    # GNO in FNOGNO is from Grid to Points
-    in_p_flat = in_p_jax.reshape(-1, coord_dim)
-    out_p_flat = out_p_jax.reshape(-1, coord_dim)
-    neighbors = ns(points=in_p_flat, queries=out_p_flat, radius=0.5)
+    # IN GNO: Points to Grid
+    in_nb = ns(points=input_geom_jax, queries=grid.reshape(-1, 3), radius=0.5)
+    # OUT GNO: Grid to Points
+    out_nb = ns(points=grid.reshape(-1, 3), queries=output_queries_jax, radius=0.5)
     
-    jax_out = jax_model.apply(variables, in_p=in_p_jax, out_p=out_p_jax, f=f_jax, out_neighbors=neighbors)
+    jax_out = jax_model.apply(
+        variables, 
+        input_geom=input_geom_jax, 
+        latent_queries=latent_queries_jax,
+        output_queries=output_queries_jax,
+        x=x_in_jax,
+        in_neighbors=in_nb,
+        out_neighbors=out_nb
+    )
     
     # ── 3. PyTorch Model ──
-    pt_model = PtFNOGNO(
+    pt_model = PtGINO(
         in_channels=in_channels,
         out_channels=out_channels,
+        gno_coord_dim=coord_dim,
+        in_gno_radius=0.5,
+        out_gno_radius=0.5,
         fno_n_modes=(4, 4, 4),
         fno_hidden_channels=16,
         fno_n_layers=2,
-        gno_coord_dim=coord_dim,
-        gno_radius=0.5,
-        gno_channel_mlp_hidden_layers=[32, 16],
+        in_gno_channel_mlp_hidden_layers=[16, 16],
+        out_gno_channel_mlp_hidden_layers=[16, 16],
         gno_use_torch_scatter=False,
         gno_use_open3d=False
     ).to(torch.float64)
     
     # Map weights
-    map_jax_to_pt_fnogno(variables['params'], pt_model)
+    map_jax_to_pt_gino(variables['params'], pt_model)
     pt_model.eval()
     
     # Prepare PT inputs
-    in_p_pt = torch.from_numpy(np.array(in_p_jax[0])).to(torch.float64) # FNOGNO expects unbatched geometry
-    out_p_pt = torch.from_numpy(np.array(out_p_jax[0])).to(torch.float64)
-    f_pt = torch.from_numpy(np.array(f_jax)).to(torch.float64)
+    in_geom_pt = torch.from_numpy(np.array(input_geom_jax)).to(torch.float64)
+    queries_grid_pt = torch.from_numpy(np.array(grid[None, ...])).to(torch.float64)
+    output_queries_pt = torch.from_numpy(np.array(output_queries_jax)).to(torch.float64)
+    x_pt = torch.from_numpy(np.array(x_in_jax)).to(torch.float64)
     
     with torch.no_grad():
-        pt_out = pt_model(in_p=in_p_pt, out_p=out_p_pt, f=f_pt)
+        pt_out = pt_model(
+            input_geom=in_geom_pt,
+            latent_queries=queries_grid_pt,
+            output_queries=output_queries_pt,
+            x=x_pt
+        )
         
     # ── 4. Compare ──
     jax_out_np = np.array(jax_out)
     pt_out_np = pt_out.numpy()
     
-    # Tolerance - models are deep, so small mismatches accumulate
     np.testing.assert_allclose(jax_out_np, pt_out_np, rtol=1e-3, atol=1e-3)
-    print("FNOGNO Model Parity PASSED!")
+    print("GINO Model Parity PASSED!")
 
 if __name__ == "__main__":
-    test_fnogno_parity()
+    test_gino_parity()
