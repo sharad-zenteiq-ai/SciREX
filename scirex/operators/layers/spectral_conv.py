@@ -70,7 +70,8 @@ class SpectralConv(nn.Module):
 
         # 1. FFT
         axes = tuple(range(1, n_dim + 1))
-        x_ft = jnp.fft.rfftn(x, axes=axes, norm="backward")
+        # neuraloperator logic: default fft_norm is "forward"
+        x_ft = jnp.fft.rfftn(x, axes=axes, norm="forward")
         
         # 2. Weights & Modes setup
         # neuraloperator logic: n_modes is total modes. 
@@ -81,26 +82,29 @@ class SpectralConv(nn.Module):
             eff_modes[i] = self.n_modes[i] // 2
         eff_modes[-1] = self.n_modes[-1] // 2 + 1
         
-        # neuraloperator logic: initial scale is 1 / (in_channels + out_channels)
-        # In JAX, jax.nn.initializers.normal(stddev=scale) for complex64
-        # gives total variance scale**2 (real/imag parts variance scale**2 / 2).
-        # PyTorch complex.normal_(0, scale) gives real/imag variance scale**2.
-        # So to match PyTorch, we need JAX stddev = sqrt(2) * scale
-        base_scale = 1 / (self.in_channels + self.out_channels) if self.init_std is None else self.init_std
-        jax_stddev = base_scale * (2 ** 0.5) 
+        # neuraloperator logic: initial scale is sqrt(2 / (in_channels + out_channels))
+        # Total variance = 2 / (in + out).
+        # We split this between real and imaginary parts: 1 / (in + out) each.
+        # In JAX variance_scaling(mode="fan_avg"), variance = scale / ((in + out) / 2).
+        # To get 1 / (in + out), we need scale / ((in + out) / 2) = 1 / (in + out) => 2 * scale = 1 => scale = 0.5.
+        
+        r_init = jax.nn.initializers.variance_scaling(scale=0.5, mode="fan_avg", distribution="truncated_normal")
+        i_init = jax.nn.initializers.variance_scaling(scale=0.5, mode="fan_avg", distribution="truncated_normal")
+        bias_init = jax.nn.initializers.variance_scaling(scale=1.0, mode="fan_avg", distribution="truncated_normal")
         
         weights_shape = (self.in_channels, self.out_channels) + tuple(eff_modes)
         
         # For N dimensions, the number of corners in frequency space is 2**(N-1).
         n_corners = 2**(n_dim - 1)
         weights = [
-            self.param(f'weights_{i+1}', jax.nn.initializers.normal(stddev=jax_stddev), weights_shape, jnp.complex64)
+            self.param(f'weights_real_{i+1}', r_init, weights_shape, jnp.float32) +
+            1j * self.param(f'weights_imag_{i+1}', i_init, weights_shape, jnp.float32)
             for i in range(n_corners)
         ]
 
         if self.bias:
             bias_shape = (1,) * n_dim + (self.out_channels,)
-            bias = self.param('bias', jax.nn.initializers.normal(stddev=base_scale), bias_shape)
+            bias = self.param('bias', bias_init, bias_shape, jnp.float32)
         else:
             bias = None
         
@@ -150,7 +154,7 @@ class SpectralConv(nn.Module):
             corner_idx += 1
             
         # 5. Inverse FFT
-        x = jnp.fft.irfftn(out_ft, s=spatial_dims, axes=axes, norm="backward")
+        x = jnp.fft.irfftn(out_ft, s=spatial_dims, axes=axes, norm="forward")
         
         if self.bias:
             x = x + bias

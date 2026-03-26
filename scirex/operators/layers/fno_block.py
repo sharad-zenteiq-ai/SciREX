@@ -83,29 +83,26 @@ class FNOBlock(nn.Module):
             x_block = nn.InstanceNorm()(x_block)
         
         # Internal activation (always applied between branches)
-        x_block = self.activation(x_block)
+        # neuraloperator logic: apply activation BEFORE ChannelMLP 
+        # (but skip it on the very last block IF not using MLP? 
+        # Actually neuralop skips it on last block regardless of MLP)
+        if not is_last:
+            x_block = self.activation(x_block)
 
-        # Step 4: Point-wise refinement (Channel MLP)
         if self.use_channel_mlp:
-            y_mlp = ChannelMLP(
+            y_skip = SkipConnection(
+                out_channels=self.hidden_channels,
+                skip_type=self.channel_mlp_skip
+            )(x)
+            
+            # Application of the MLP refinement
+            x_block = ChannelMLP(
                 out_channels=self.hidden_channels,
                 hidden_channels=int(self.hidden_channels * self.channel_mlp_expansion),
                 n_layers=2,
                 activation=self.activation
             )(x_block)
             
-            # CRITICAL: In neuralop, the MLP skip source is the ORIGINAL block input x
-            # providing a deep residual path.
-            y_skip = SkipConnection(
-                out_channels=self.hidden_channels,
-                skip_type=self.channel_mlp_skip
-            )(x)
+            x_block = x_block + y_skip
             
-            x_block = y_mlp + y_skip
-            
-            # Trailing activation: neuralop omits this on the very last FNO layer
-            if not is_last:
-                x_block = self.activation(x_block)
-
         return x_block
-
