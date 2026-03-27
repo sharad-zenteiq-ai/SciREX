@@ -50,6 +50,7 @@ class CarCFDDataset:
         out_gno_radius: float = 0.05,
         neighbor_cache_dir: Optional[str] = "./scirex/operators/data/neighbor_cache",
         use_cache: bool = True,
+        normalize_mesh: bool = True,
     ):
         self.root_dir = Path(root_dir).expanduser().resolve()
         self.query_res = query_res
@@ -61,6 +62,7 @@ class CarCFDDataset:
         self.in_gno_radius = in_gno_radius
         self.out_gno_radius = out_gno_radius
         self.use_cache = use_cache
+        self.normalize_mesh = normalize_mesh
         self.neighbor_cache_dir = Path(neighbor_cache_dir).expanduser().resolve() if neighbor_cache_dir else None
         
         if self.use_cache and self.neighbor_cache_dir:
@@ -152,6 +154,23 @@ class CarCFDDataset:
         press = item["press"]
         centroids = item.get("centroids")
 
+        # --- Geometry Normalization ---
+        if self.normalize_mesh:
+            v_min, v_max = vertices.min(axis=0), vertices.max(axis=0)
+            center = (v_min + v_max) / 2.0
+            max_range = (v_max - v_min).max()
+            scale = 0.9 / (max_range + 1e-8)  # Isotropic scale with padding
+
+            vertices = (vertices - center) * scale + 0.5
+            item["vertices"] = vertices
+            
+            if centroids is not None:
+                centroids = (centroids - center) * scale + 0.5
+                item["centroids"] = centroids
+            
+            if "distance" in item:
+                item["distance"] = item["distance"] * scale
+
         if press.ndim == 2 and press.shape[1] > 112:
             press = np.concatenate((press[:, 0:16], press[:, 112:]), axis=1)
 
@@ -212,7 +231,7 @@ class CarCFDDataset:
     def _add_neighbors(self, sample: Dict, cache_idx: str) -> Dict:
         """Adds pre-calculated neighbors with caching."""
         res_str = "x".join(map(str, self.query_res))
-        cache_id = f"{cache_idx}_v{self.max_vertices}_res{res_str}_n{self.max_neighbors}_rin{self.in_gno_radius}_rout{self.out_gno_radius}"
+        cache_id = f"{cache_idx}_v{self.max_vertices}_res{res_str}_n{self.max_neighbors}_rin{self.in_gno_radius}_rout{self.out_gno_radius}_norm{self.normalize_mesh}"
         cache_path = self.neighbor_cache_dir / f"{cache_id}.npz"
 
         if cache_path.exists():
