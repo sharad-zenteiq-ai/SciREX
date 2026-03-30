@@ -63,10 +63,11 @@ def make_schedule(config: NSFNO2DConfig):
     spe = config.get_steps_per_epoch()
     
     if config.opt.scheduler == "StepLR":
-        decay_steps = config.opt.step_size * spe
+        # neuraloperator logic: decay every config.opt.step_size epochs
+        # spe (steps_per_epoch) is calculated based on n_train / batch_size in config.get_steps_per_epoch()
         return optax.exponential_decay(
             init_value=config.opt.learning_rate,
-            transition_steps=decay_steps,
+            transition_steps=config.opt.step_size * spe,
             decay_rate=config.opt.gamma,
             staircase=True,
         )
@@ -114,7 +115,14 @@ def train_step(state, batch_x, batch_y, loss_type="h1"):
     grad_fn = jax.value_and_grad(loss_fn)
     loss, grads = grad_fn(state.params)
     state = state.apply_gradients(grads=grads)
-    return state, {"loss": loss}
+    
+    # Compute grad norms for logging
+    grad_norms = {
+        '/'.join(path): jnp.linalg.norm(g)
+        for path, g in flax.traverse_util.flatten_dict(grads).items()
+    }
+    
+    return state, {"loss": loss, "grad_norms": grad_norms}
 
 @jax.jit
 def eval_step(state, batch_x, batch_y_raw, y_mean, y_std):
@@ -131,7 +139,9 @@ def eval_step(state, batch_x, batch_y_raw, y_mean, y_std):
 # ── 4. MAIN ──
 def main():
     config = NSFNO2DConfig()
-    print(f"Config: {config.opt.training_loss} loss, {config.opt.n_epochs} epochs")
+    # neuraloperator/some PAPERS use 1e-3 for Adam on Navier-Stokes
+    config.opt.learning_rate = 1e-3 
+    print(f"Config: {config.opt.training_loss} loss, {config.opt.n_epochs} epochs, lr={config.opt.learning_rate}")
 
     # Load & Prepare Data
     train_x, train_y, test_x, test_y = load_ns_data(config)
@@ -145,6 +155,10 @@ def main():
     x_normalizer = GaussianNormalizer(train_x)
     train_x_norm = jnp.array(x_normalizer.encode(train_x))
     test_x_norm = jnp.array(x_normalizer.encode(test_x))
+
+    print(f"\nData Ranges:")
+    print(f"  train_x_norm: min={jnp.min(train_x_norm):.4f}, max={jnp.max(train_x_norm):.4f}, mean={jnp.mean(train_x_norm):.4f}, std={jnp.std(train_x_norm):.4f}")
+    print(f"  train_y_norm: min={jnp.min(train_y_norm):.4f}, max={jnp.max(train_y_norm):.4f}, mean={jnp.mean(train_y_norm):.4f}, std={jnp.std(train_y_norm):.4f}")
 
     # Model
     model = FNO(
@@ -174,6 +188,16 @@ def main():
         weight_decay=config.opt.weight_decay,
     )
 
+    # Log model parameter count
+    param_count = sum(x.size for x in jax.tree_util.tree_leaves(state.params))
+    print(f"\nModel: {model.__class__.__name__}")
+    print(f"Total parameters: {param_count:,}")
+
+    # Log parameter norms
+    print("\nInitial Parameter Norms:")
+    for path, param in flax.traverse_util.flatten_dict(state.params).items():
+        print(f"  {'/'.join(path)}: shape={param.shape}, norm={jnp.linalg.norm(param):.4f}")
+
     # Training Loop
     print(f"\nTraining {config.opt.training_loss}...")
     print("Pre-compiling training and eval steps...")
@@ -198,6 +222,12 @@ def main():
             if epoch == 1 and i == 0:
                 print("First batch completed (compilation done).")
             epoch_loss += float(metrics["loss"])
+            
+            # Print grad norms for a few layers every epoch
+            if i == 0:
+                gn = metrics["grad_norms"]
+                sample_grads = {k: v for k, v in gn.items() if "SpectralConv" in k and "weight" in k}
+                print(f"  Grad norms (epoch {epoch}, batch 0): { {k.split('/')[-2]: float(v) for k, v in sample_grads.items()} }")
 
         epoch_time = time.time() - start_time
         
@@ -214,7 +244,8 @@ def main():
             test_mse_val += float(m["mse"])
         num_batches = num_train // config.data.batch_size
         avg_epoch_loss = epoch_loss / num_train
-        train_err = epoch_loss / num_batches
+        # train_err is the average relative error per sample in training set
+        train_err = avg_epoch_loss 
         
         if epoch % 1 == 0 or epoch == 1:
             # Format exactly like neuraloperator Trainer.log_training and Trainer.log_eval

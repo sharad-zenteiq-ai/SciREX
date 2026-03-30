@@ -42,7 +42,7 @@ class NavierStokesOptConfig(ConfigBase):
 
 
 class NavierStokesDatasetConfig(ConfigBase):
-    folder: str = "/media/HDD/mamta_backup/datasets/fno/navier_stokes"
+    folder: str = "/media/HDD/mamta_backup/datasets/fno/navier_stokes" # TODO: change this path
     train_file: str = "nsforcing_train_128.pt"
     test_file: str = "nsforcing_test_128.pt"
     batch_size: int = 8
