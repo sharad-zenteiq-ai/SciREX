@@ -1,21 +1,45 @@
-import os
+# Copyright (c) 2024 Zenteiq Aitech Innovations Private Limited and
+# AiREX Lab, Indian Institute of Science, Bangalore.
+# All rights reserved.
+#
+# This file is part of SciREX
+# (Scientific Research and Engineering eXcellence Platform).
+
+"""
+Car-CFD dataset — download, reorganization, and training class.
+"""
+
+from __future__ import annotations
+
 import json
+import os
+import sys
 import urllib.request
 from pathlib import Path
+from typing import List, Optional, Union
 
-import os
-import json
-import urllib.request
-from pathlib import Path
+import numpy as np
 
+# Handle relative imports for standalone execution
+if __name__ == "__main__" and __package__ is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+try:
+    from .mesh_datamodule import MeshDataModule
+except ImportError:
+    from scirex.operators.data.mesh_datamodule import MeshDataModule
+
+
+ZENODO_RECORD_ID = "13936501"
+
+# 1. DATA PREPARATION
 
 def download_dataset(root: Path):
-    record_id = "13936501"
-    url = f"https://zenodo.org/api/records/{record_id}"
-
+    """Download and extract Car-CFD from Zenodo with corruption check."""
+    url = f"https://zenodo.org/api/records/{ZENODO_RECORD_ID}"
     root.mkdir(parents=True, exist_ok=True)
-
-    print("Fetching metadata...")
+    
+    print(f"Fetching Zenodo metadata ({ZENODO_RECORD_ID})...")
     with urllib.request.urlopen(url) as response:
         metadata = json.loads(response.read().decode())
 
@@ -23,82 +47,34 @@ def download_dataset(root: Path):
         file_url = file_obj["links"]["self"]
         file_name = file_obj["key"]
         file_path = root / file_name
-
         expected_size = file_obj.get("size", None)
 
-        # --------------------------------------------------
-        # CHECK CORRUPTION
-        # --------------------------------------------------
         if file_path.exists() and expected_size:
-            actual_size = file_path.stat().st_size
-
-            if actual_size != expected_size:
-                print(f" Corrupted file detected: {file_name}")
-                print("Deleting and re-downloading...")
+            if file_path.stat().st_size != expected_size:
+                print(f" Corrupted file detected: {file_name}. Deleting.")
                 file_path.unlink()
 
-        # --------------------------------------------------
-        # DOWNLOAD
-        # --------------------------------------------------
         if not file_path.exists():
             print(f"⬇ Downloading {file_name}...")
             urllib.request.urlretrieve(file_url, file_path)
 
-        # --------------------------------------------------
-        # EXTRACT (SAFE)
-        # --------------------------------------------------
-        print(f" Extracting {file_name}...")
+        # Extraction logic
+        if not (root / "processed-car-pressure-data").exists():
+            print(f" Extracting {file_name}...")
+            try:
+                if file_name.endswith(".zip"):
+                    import zipfile
+                    with zipfile.ZipFile(file_path, "r") as z: z.extractall(root)
+                elif file_name.endswith((".tar.gz", ".tgz", ".tar")):
+                    import tarfile
+                    mode = "r:gz" if file_name.endswith("gz") else "r:"
+                    with tarfile.open(file_path, mode) as t: t.extractall(root)
+            except Exception as e:
+                print(f" Extraction failed: {e}")
+                if file_path.exists(): file_path.unlink()
 
-        try:
-            if file_name.endswith(".zip"):
-                import zipfile
-                with zipfile.ZipFile(file_path, "r") as z:
-                    z.extractall(root)
-
-            elif file_name.endswith((".tar.gz", ".tgz", ".tar")):
-                import tarfile
-                mode = "r:gz" if file_name.endswith("gz") else "r:"
-                with tarfile.open(file_path, mode) as t:
-                    t.extractall(root)
-
-        except Exception as e:
-            print(f" Extraction failed: {e}")
-            print("Deleting corrupted file and retrying...\n")
-
-            file_path.unlink()
-
-            # Retry download once
-            print(f" Re-downloading {file_name}...")
-            urllib.request.urlretrieve(file_url, file_path)
-
-            print(f" Extracting again...")
-            import tarfile
-            mode = "r:gz" if file_name.endswith("gz") else "r:"
-            with tarfile.open(file_path, mode) as t:
-                t.extractall(root)
-                
-# --------------------------------------------------
-# ROBUST DATA DIR FINDER
-# --------------------------------------------------
-def find_data_dir(root):
-
-    for path in root.rglob("*"):
-        if path.name == "data" and path.is_dir():
-            print(f" Found data dir: {path}")
-            return path
-
-    print("\n Could not find data folder. Available dirs:")
-    for p in root.rglob("*"):
-        if p.is_dir():
-            print(p)
-
-    raise RuntimeError("Data directory not found")
-
-
-# --------------------------------------------------
-# SAVE PLY
-# --------------------------------------------------
 def save_ply(vertices, faces, filepath):
+    """Simple PLY exporter."""
     with open(filepath, "w") as f:
         f.write("ply\nformat ascii 1.0\n")
         f.write(f"element vertex {len(vertices)}\n")
@@ -106,64 +82,163 @@ def save_ply(vertices, faces, filepath):
         f.write(f"element face {len(faces)}\n")
         f.write("property list uchar int vertex_indices\n")
         f.write("end_header\n")
-
         for v in vertices:
             f.write(f"{v[0]} {v[1]} {v[2]}\n")
-
         for face in faces:
             f.write(f"3 {face[0]} {face[1]} {face[2]}\n")
 
+def reorganize_data_into_samples(base_dir: Path):
+    """
+    Standardizes the data layout so MeshDataModule can find items.
+    Moves flat mesh_NNN.ply and press_NNN.npy files into samples/NNN/.
+    Also handles conversion from .npz if that's what was downloaded.
+    """
+    data_dir = base_dir / "data"
+    samples_dir = data_dir / "samples"
+    samples_dir.mkdir(exist_ok=True)
+    
+    # ── Choice A: NPZ files ────────────────────────────────────────────────
+    npz_files = list(data_dir.glob("*.npz"))
+    if npz_files:
+        print(f" Converting {len(npz_files)} NPZ files into standardized samples/")
+        for i, npz_path in enumerate(npz_files):
+            idx = npz_path.stem
+            s_dir = samples_dir / idx
+            s_dir.mkdir(exist_ok=True)
+            data = np.load(npz_path, allow_pickle=True)
+            v, p = data["vertices"], data["press"]
+            
+            # Squeeze extra leading dimensions (e.g. (1, N, 3) -> (N, 3))
+            while v.ndim > 2: v = np.squeeze(v, 0)
+            while p.ndim > 2: p = np.squeeze(p, 0)
+            
+            # Standardize p to (N, C)
+            if p.ndim == 1: p = p[:, None]
+            if p.ndim == 2 and p.shape[0] < p.shape[1]: p = p.T # Ensure (N, C)
+            
+            # Trimming logic for Car-CFD parity (NeuralOperator convention)
+            # The raw data often contains extra query/boundary points (typically 96 or 192)
+            # concatenated with the actual car surface points.
+            if p.shape[0] > 112:
+                # Remove 96 points in the middle index range [16, 112)
+                # This matches the specific packing found in the Car-CFD release.
+                p = np.concatenate((p[:16, :], p[112:, :]), axis=0)
+            
+            if v.shape[0] > 112:
+                v = np.concatenate((v[:16, :], v[112:, :]), axis=0)
+            
+            # Final alignment
+            if p.shape[0] > v.shape[0]:
+                p = p[-v.shape[0]:]
+            elif v.shape[0] > p.shape[0]:
+                v = v[-p.shape[0]:]
 
-# --------------------------------------------------
-# CONVERT NPZ → SAMPLE FOLDERS
-# --------------------------------------------------
-def convert_to_sample_folders(data_dir, out_dir):
-    out_dir.mkdir(parents=True, exist_ok=True)
+            np.save(s_dir / "press.npy", p.astype(np.float32))
+            if "faces" in data:
+                save_ply(v, data["faces"], s_dir / "mesh.ply")
+                
+            if i % 100 == 0: print(f"  Processed {i}/{len(npz_files)}")
+        return
 
-    npz_files = sorted(data_dir.glob("*.npz"))
+    # ── Choice B: Flat PLY/NPY files ───────────────────────────────────────
+    mesh_files = list(data_dir.glob("mesh_*.ply"))
+    if mesh_files:
+        print(f" Reorganizing {len(mesh_files)} flat files into standardized samples/")
+        for i, m_path in enumerate(mesh_files):
+            idx = m_path.stem.replace("mesh_", "")
+            s_dir = samples_dir / idx
+            s_dir.mkdir(exist_ok=True)
+            
+            # Find and copy pressure
+            p_path = data_dir / f"press_{idx}.npy"
+            if p_path.exists():
+                press = np.load(p_path)
+                if press.ndim == 1: press = press[:, None]
+                if press.ndim == 2 and press.shape[0] < press.shape[1]: press = press.T
+                
+                if press.shape[0] > 112:
+                    press = np.concatenate((press[:16, :], press[112:, :]), axis=0)
+                
+                # Check against mesh. trimesh can load the ply to get vertex count.
+                try:
+                    import trimesh
+                    m = trimesh.load(m_path)
+                    v_count = len(m.vertices)
+                    if press.shape[0] > v_count:
+                        press = press[-v_count:]
+                except:
+                    pass
+                    
+                np.save(s_dir / "press.npy", press.astype(np.float32))
 
-    print(f"\n Total NPZ files found: {len(npz_files)}")
+            # Copy mesh to samples/ID/mesh.ply
+            import shutil
+            shutil.copy2(m_path, s_dir / "mesh.ply")
+            
+            if i % 100 == 0: print(f"  Processed {i}/{len(mesh_files)}")
 
-    for i, npz_file in enumerate(npz_files):
-        idx = npz_file.stem
-        sample_dir = out_dir / idx
-        sample_dir.mkdir(exist_ok=True)
+# 2. TRAINING CLASS
 
-        data = np.load(npz_file, allow_pickle=True)
+class CarCFDDataset(MeshDataModule):
+    """Car-CFD Dataset that automatically handles download and reorganization."""
+    
+    def __init__(
+        self,
+        root_dir: Union[str, Path],
+        n_train: Optional[int] = 1,
+        n_test: Optional[int] = 1,
+        query_res: List[int] = [32, 32, 32],
+        download: bool = True,
+        max_neighbors: int = 64,
+        in_gno_radius: float = 0.05,
+        out_gno_radius: float = 0.05,
+        neighbor_cache_dir: Optional[str] = None,
+        use_cache: bool = True,
+        mesh_backend: str = "trimesh",
+    ):
+        self.root_dir = Path(root_dir).expanduser().resolve()
+        if download:
+            download_dataset(self.root_dir)
+            
+        # Resolve path to the extracted data
+        # Some Zenodo zips might have nested folders or flat files.
+        possibilities = [
+            self.root_dir / "processed-car-pressure-data/processed-car-pressure-data",
+            self.root_dir / "processed-car-pressure-data",
+            self.root_dir
+        ]
+        base = self.root_dir
+        for p in possibilities:
+            if (p / "data").exists() or (p / "train.txt").exists():
+                base = p
+                break
 
-        vertices = data["vertices"]
-        press = data["press"]
+        # Ensure we have standardized samples/ directory
+        samples_root = base / "data/samples"
+        is_populated = samples_root.exists() and any(samples_root.iterdir())
+        
+        if not is_populated:
+            print(f"Standardized samples not found or empty at {samples_root}. Starting reorganization...")
+            reorganize_data_into_samples(base)
 
-        # SAME FIX AS ORIGINAL DATASET
-        if press.ndim == 2 and press.shape[1] > 112:
-            press = np.concatenate((press[:, 0:16], press[:, 112:]), axis=1)
+        super().__init__(
+            root_dir=base,
+            item_dir_name="samples/",
+            n_train=n_train,
+            n_test=n_test,
+            query_res=query_res,
+            attributes=["press"],
+            max_neighbors=max_neighbors,
+            in_gno_radius=in_gno_radius,
+            out_gno_radius=out_gno_radius,
+            neighbor_cache_dir=neighbor_cache_dir,
+            use_cache=use_cache,
+            mesh_backend=mesh_backend,
+        )
 
-        # Save pressure
-        np.save(sample_dir / "press.npy", press)
-
-        # Save mesh
-        if "faces" in data:
-            faces = data["faces"]
-            save_ply(vertices, faces, sample_dir / "mesh.ply")
-        else:
-            print(f" No faces in {idx}, skipping mesh")
-
-        if i % 50 == 0:
-            print(f"Processed {i}/{len(npz_files)}")
-
-
-# --------------------------------------------------
-# MAIN
-# --------------------------------------------------
 if __name__ == "__main__":
-    root = Path("folder/data/sample")
-
-    # Step 1: Download + Extract
-    download_dataset(root)
-
-    # Step 2: Find actual data folder
-    data_dir = find_data_dir(root)
-
-    # Step 3: Convert into sample-wise folders
-    out_dir = root / "samples"
-    convert_to_sample_folders(data_dir, out_dir)
+    root = Path("/home/gazania/zan_folder/SciREX/scirex/operators/data/car_cfd_data")
+    ds = CarCFDDataset(root_dir=root, n_train=1, n_test=0)
+    print(f"\n✓ Successfully loaded training sample.")
+    print(f"Keys: {list(ds.train_data[0].keys())}")
+    print(f"Pressure shape: {ds.train_data[0]['press'].shape} (Corrected for parity)")

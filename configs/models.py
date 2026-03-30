@@ -153,7 +153,7 @@ class GINOConfig(ModelConfig):
     fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
     fno_channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
 
-    max_neighbors: int = 10
+    max_neighbors: int = 64
     use_neighbor_cache: bool = True
 
 
@@ -199,7 +199,7 @@ class FNOGNOConfig(ModelConfig):
     fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
     fno_channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
 
-    max_neighbors: int = 10
+    max_neighbors: int = 64
     use_neighbor_cache: bool = True
 
 

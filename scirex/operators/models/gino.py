@@ -58,7 +58,7 @@ class GINO(nn.Module):
     fno_channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
     
     # Internal neighbor limits (memory bounded in JAX)
-    max_neighbors: int = 10
+    max_neighbors: int = 64
 
     @nn.compact
     def __call__(

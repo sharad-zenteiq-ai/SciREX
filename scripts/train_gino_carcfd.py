@@ -101,7 +101,7 @@ def main():
 
     input_geom = jnp.asarray(dummy_dict["vertices"])
     latent_queries = jnp.asarray(dummy_dict["query_points"])
-    output_queries = jnp.asarray(dummy_dict["centroids"] if "centroids" in dummy_dict else dummy_dict["vertices"])
+    output_queries = jnp.asarray(dummy_dict["vertices"])
     latent_features = jnp.asarray(dummy_dict["distance"])
     
     in_nb = jax.tree_util.tree_map(jnp.asarray, dummy_dict["in_neighbors"])
@@ -180,14 +180,19 @@ def main():
         for batch in dataset.get_batch("train", batch_size=config.data.batch_size):
             batch_geom = batch["vertices"]
             batch_queries = batch["query_points"]
-            batch_out_queries = batch.get("centroids", batch["vertices"])
+            batch_out_queries = batch["vertices"]
             batch_lat_features = batch["distance"]
             batch_y = batch["press"]
             
-            # Ensure proper channel dimensions for JAX ops
-            if batch_y.ndim == 3 and batch_y.shape[-1] != 1: pass 
-            if batch_y.ndim == 2: batch_y = batch_y[:, :, None]
-            if batch_lat_features.ndim == 4: batch_lat_features = batch_lat_features[:, :, :, :, None]
+            # Ensure proper channel dimensions for JAX ops: (batch, n_points, channels)
+            if batch_y.ndim == 2:
+                batch_y = batch_y[:, :, None]
+            elif batch_y.ndim == 3 and batch_y.shape[1] == 1:
+                # Handle (batch, 1, n_points) if it somehow appears
+                batch_y = batch_y.transpose(0, 2, 1)
+            
+            if batch_lat_features.ndim == 4:
+                batch_lat_features = batch_lat_features[:, :, :, :, None]
                 
             batch_in_nb = batch["in_neighbors"]
             batch_out_nb = batch["out_neighbors"]
@@ -206,7 +211,7 @@ def main():
         for batch in dataset.get_batch("test", batch_size=config.data.batch_size):
             batch_geom = batch["vertices"]
             batch_queries = batch["query_points"]
-            batch_out_queries = batch.get("centroids", batch["vertices"])
+            batch_out_queries = batch["vertices"]
             batch_lat_features = batch["distance"]
             batch_y = batch["press"]
             
