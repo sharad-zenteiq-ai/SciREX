@@ -124,9 +124,11 @@ class GINOConfig(ModelConfig):
     arch: str = "gino"
 
     # GINO core
+    data_channels: int = 1 # Alias for in_channels
     latent_feature_channels: Optional[int] = None
     projection_channel_ratio: int = 4
     gno_coord_dim: int = 3
+    gno_coord_embed_dim: int = 16
     in_gno_radius: float = 0.033
     out_gno_radius: float = 0.033
     in_gno_transform_type: str = "linear"
@@ -149,22 +151,31 @@ class GINOConfig(ModelConfig):
 
     # FNO extras
     fno_use_channel_mlp: bool = True
-    fno_norm: bool = False
+    fno_norm: str = "instance_norm"
+    fno_ada_in_features: int = 32
     fno_skip: Literal["identity", "linear", "soft-gating"] = "linear"
     fno_channel_mlp_skip: Literal["identity", "linear", "soft-gating"] = "soft-gating"
+    fno_factorization: str = "tucker"
+    fno_rank: float = 0.4
+    fno_domain_padding: float = 0.125
+    fno_channel_mlp_expansion: float = 1.0
+    fno_resolution_scaling_factor: int = 1
 
     max_neighbors: int = 64
     use_neighbor_cache: bool = True
 
 
 class GINO_Small3d(GINOConfig):
-    in_channels: int = 1
+    in_channels: int = 0  
     out_channels: int = 1
-    fno_n_modes: Tuple[int, ...] = (8, 8, 8)
+    latent_feature_channels: Optional[int] = 1
+    gno_coord_dim: int = 3
+    gno_coord_embed_dim: int = 16
+    in_gno_radius: float = 0.033
+    out_gno_radius: float = 0.033
+    fno_n_modes: Tuple[int, ...] = (16, 16, 16)
     fno_hidden_channels: int = 64
     fno_n_layers: int = 4
-    in_gno_radius: float = 0.05
-    out_gno_radius: float = 0.05
 
 
 #  F N O G N O   

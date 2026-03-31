@@ -37,8 +37,6 @@ except ModuleNotFoundError:
 
 
 class MeshDataModule:
-    """General dataset for irregular coordinate meshes (JAX-compatible)."""
-
     def __init__(
         self,
         root_dir: Union[str, Path],
@@ -53,6 +51,8 @@ class MeshDataModule:
         neighbor_cache_dir: Optional[str] = None,
         use_cache: bool = True,
         mesh_backend: str = "trimesh",
+        min_b: Optional[np.ndarray] = None,
+        max_b: Optional[np.ndarray] = None,
     ):
         self.root_dir = Path(root_dir).expanduser().resolve()
         self.item_dir_name = item_dir_name
@@ -78,7 +78,14 @@ class MeshDataModule:
         # 2. Load meshes and compute global bounding box
         print(f"Loading {len(mesh_ind)} meshes from {data_dir}...")
         meshes = self._load_meshes(data_dir, mesh_ind)
-        min_b, max_b = self._get_global_bounding_box(meshes)
+        
+        # Use provided bbox or compute from current selection
+        if min_b is not None and max_b is not None:
+             self._min_b, self._max_b = min_b, max_b
+        else:
+             self._min_b, self._max_b = self._get_global_bounding_box(meshes)
+        
+        min_b, max_b = self._min_b, self._max_b
 
         # Build shared query grid
         l = [np.linspace(min_b[i], max_b[i], query_res[i]) for i in range(3)]
@@ -194,11 +201,13 @@ class MeshDataModule:
         # 6. Final Gaussian Normalization (on pressure etc.)
         self.train_data = self.data[:n_train]
         self.test_data = self.data[n_train:]
+        self.normalizers = {}
         
         for attr in self.attributes:
             if n_train > 0 and attr in self.train_data[0]:
                 stacked = jnp.stack([jnp.array(d[attr]) for d in self.train_data])
                 norm = GaussianNormalizer(stacked)
+                self.normalizers[attr] = norm
                 for d in self.data:
                     d[attr] = np.array(norm.encode(jnp.array(d[attr])))
 
@@ -236,14 +245,24 @@ class MeshDataModule:
         return centroids.astype(np.float32), areas.astype(np.float32)
 
     def _compute_distances(self, mesh, queries):
+        # NeuralOperator forces signed_distance=True for watertight meshes
         if self._backend == "open3d":
             scene = o3d.t.geometry.RaycastingScene()
             scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
-            dist = scene.compute_distance(queries.astype(np.float32)).numpy()
+            dist = scene.compute_signed_distance(queries.astype(np.float32)).numpy()
             closest = scene.compute_closest_points(queries.astype(np.float32))["points"].numpy()
         else:
-            closest, dist, _ = _trimesh.proximity.closest_point(mesh, queries.reshape(-1, 3))
-            dist, closest = dist.reshape(queries.shape[:-1]), closest.reshape(queries.shape)
+            # Fallback for trimesh
+            if mesh.is_watertight:
+                from trimesh.proximity import signed_distance
+                dist = signed_distance(mesh, queries.reshape(-1, 3))
+                dist = dist.reshape(queries.shape[:-1])
+            else:
+                _, dist, _ = _trimesh.proximity.closest_point(mesh, queries.reshape(-1, 3))
+                dist = dist.reshape(queries.shape[:-1])
+            
+            closest, _, _ = _trimesh.proximity.closest_point(mesh, queries.reshape(-1, 3))
+            closest = closest.reshape(queries.shape)
         return dist, closest
 
     def _range_normalize(self, data, old_min, old_max, new_min, new_max):

@@ -44,10 +44,12 @@ class GINOCarCFDOptConfig(ConfigBase):
 
 class GINOCarCFDDatasetConfig(ConfigBase):
     data_root: str = "./scirex/operators/data/car_cfd_data"
+    root: str = data_root # Alias
     batch_size: int = 1
     n_train: int = 500
     n_test: int = 111
     query_res: List[int] = [32, 32, 32]
+    sdf_query_resolution: int = 32 
     download: bool = True
     neighbor_cache_dir: str = "./scirex/operators/data/neighbor_cache"
 
@@ -55,6 +57,7 @@ class GINOCarCFDDatasetConfig(ConfigBase):
 class Default(ConfigBase):
     """Full experiment config for Car-CFD + GINO."""
     
+    n_params_baseline: Optional[Any] = None
     verbose: bool = True
     model: GINOConfig = GINO_Small3d()
     opt: GINOCarCFDOptConfig = GINOCarCFDOptConfig()

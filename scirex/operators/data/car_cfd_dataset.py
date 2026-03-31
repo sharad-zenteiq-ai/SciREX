@@ -116,23 +116,6 @@ def reorganize_data_into_samples(base_dir: Path):
             if p.ndim == 1: p = p[:, None]
             if p.ndim == 2 and p.shape[0] < p.shape[1]: p = p.T # Ensure (N, C)
             
-            # Trimming logic for Car-CFD parity (NeuralOperator convention)
-            # The raw data often contains extra query/boundary points (typically 96 or 192)
-            # concatenated with the actual car surface points.
-            if p.shape[0] > 112:
-                # Remove 96 points in the middle index range [16, 112)
-                # This matches the specific packing found in the Car-CFD release.
-                p = np.concatenate((p[:16, :], p[112:, :]), axis=0)
-            
-            if v.shape[0] > 112:
-                v = np.concatenate((v[:16, :], v[112:, :]), axis=0)
-            
-            # Final alignment
-            if p.shape[0] > v.shape[0]:
-                p = p[-v.shape[0]:]
-            elif v.shape[0] > p.shape[0]:
-                v = v[-p.shape[0]:]
-
             np.save(s_dir / "press.npy", p.astype(np.float32))
             if "faces" in data:
                 save_ply(v, data["faces"], s_dir / "mesh.ply")
@@ -156,19 +139,6 @@ def reorganize_data_into_samples(base_dir: Path):
                 if press.ndim == 1: press = press[:, None]
                 if press.ndim == 2 and press.shape[0] < press.shape[1]: press = press.T
                 
-                if press.shape[0] > 112:
-                    press = np.concatenate((press[:16, :], press[112:, :]), axis=0)
-                
-                # Check against mesh. trimesh can load the ply to get vertex count.
-                try:
-                    import trimesh
-                    m = trimesh.load(m_path)
-                    v_count = len(m.vertices)
-                    if press.shape[0] > v_count:
-                        press = press[-v_count:]
-                except:
-                    pass
-                    
                 np.save(s_dir / "press.npy", press.astype(np.float32))
 
             # Copy mesh to samples/ID/mesh.ply
@@ -235,6 +205,16 @@ class CarCFDDataset(MeshDataModule):
             use_cache=use_cache,
             mesh_backend=mesh_backend,
         )
+
+        # 4. Trimming logic (Must happen AFTER normalization in MeshDataModule for parity)
+        # NeuralOperator normalizes on the full 3682 points, then crops to 3586 vertices.
+        for it in self.data:
+            if "press" in it:
+                p = it["press"]
+                # p has shape (N, 1) or (1, N). NeuralOp uses (1, 3682). 
+                # SciREX standardizes to (N, 1) in MeshDataModule.
+                if p.shape[0] > 112:
+                    it["press"] = np.concatenate((p[:16, :], p[112:, :]), axis=0)
 
 if __name__ == "__main__":
     root = Path("/home/gazania/zan_folder/SciREX/scirex/operators/data/car_cfd_data")

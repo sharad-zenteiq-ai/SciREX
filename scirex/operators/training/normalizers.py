@@ -40,11 +40,11 @@ class GaussianNormalizer:
         reduce_axes = tuple(range(len(x.shape) - 1))
         
         self.mean = jnp.mean(x, axis=reduce_axes, keepdims=True)
-        self.std = jnp.std(x, axis=reduce_axes, keepdims=True)
+        self.std = jnp.std(x, axis=reduce_axes, keepdims=True, ddof=1)
         self.eps = eps
 
     def encode(self, x):
-        return (x - self.mean) / (self.std + self.eps)
+        return ((x - self.mean) / (self.std + self.eps)).reshape(x.shape)
 
     def decode(self, x):
         return x * (self.std + self.eps) + self.mean
