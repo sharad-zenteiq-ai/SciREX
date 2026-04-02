@@ -118,7 +118,8 @@ class FNO(nn.Module):
             out_channels=self.hidden_channels,
             hidden_channels=lifting_hidden,
             n_layers=2,
-            activation=self.activation
+            activation=self.activation,
+            name = ""lifting_layer"
         )(x)
         
         # Stage 4: Iterative Kernel Integration (Processing)
@@ -141,7 +142,8 @@ class FNO(nn.Module):
             out_channels=self.out_channels,
             hidden_channels=projection_hidden,
             n_layers=2,
-            activation=self.activation
+            activation=self.activation,
+            name = "projection_layer"
         )(x)
         
         # 6. Inverse Domain Padding (Crop)
